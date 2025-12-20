@@ -13,6 +13,7 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { db, properties, contributions } from '../../lib/db';
 import { eq, sql } from 'drizzle-orm';
+import { ratingsSubmitted } from '../../lib/metrics';
 
 interface RateRequest {
   propertyId: string;
@@ -126,6 +127,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       .where(eq(properties.id, body.propertyId));
 
     console.log(`⭐ Rating submitted: ${rating} for property ${body.propertyId} (new avg: ${newAvg.toFixed(1)}, count: ${newCount})`);
+
+    // Track metric
+    ratingsSubmitted.inc({ rating: rating.toString() });
 
     return new Response(
       JSON.stringify({

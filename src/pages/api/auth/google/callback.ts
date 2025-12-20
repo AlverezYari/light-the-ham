@@ -9,6 +9,7 @@ export const prerender = false;
 
 import type { APIRoute } from 'astro';
 import { google, findOrCreateUser, createSession, createSessionCookie } from '../../../../lib/auth';
+import { userLogins } from '../../../../lib/metrics';
 
 export const GET: APIRoute = async ({ url, cookies, redirect }) => {
   const code = url.searchParams.get('code');
@@ -60,6 +61,9 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
 
     // Create session
     const sessionToken = await createSession(user.id);
+
+    // Track login metric
+    userLogins.inc({ provider: 'google' });
 
     // Set session cookie
     const headers = new Headers();

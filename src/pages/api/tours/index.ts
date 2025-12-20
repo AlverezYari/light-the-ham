@@ -10,6 +10,7 @@ export const prerender = false;
 import type { APIRoute } from 'astro';
 import { db, tours, tourStops, properties, propertyPhotos } from '../../../lib/db';
 import { eq, and, desc } from 'drizzle-orm';
+import { toursCreated } from '../../../lib/metrics';
 
 // Generate a URL-friendly slug
 function generateSlug(name: string): string {
@@ -64,6 +65,9 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     console.log(`🗺️ Created tour: ${tour.slug} with ${body.propertyIds.length} stops`);
+
+    // Track metric
+    toursCreated.inc();
 
     return new Response(
       JSON.stringify({

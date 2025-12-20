@@ -17,6 +17,7 @@ import type { APIRoute } from 'astro';
 import { db, properties, contributions, propertyPhotos, propertyFeatures, seasons } from '../../lib/db';
 import { geocodeAddress, isGeocodeError } from '../../lib/geocode';
 import { eq } from 'drizzle-orm';
+import { propertiesSubmitted } from '../../lib/metrics';
 
 interface SubmitRequest {
   address: string;
@@ -165,6 +166,9 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     }
 
     console.log(`✅ Submission complete: ${property.id}`);
+
+    // Track metric
+    propertiesSubmitted.inc({ city: body.city });
 
     return new Response(
       JSON.stringify({

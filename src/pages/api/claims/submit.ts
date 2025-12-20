@@ -14,6 +14,7 @@ import type { APIRoute } from 'astro';
 import { db, properties, propertyClaims, users } from '../../../lib/db';
 import { eq, and, gte, count } from 'drizzle-orm';
 import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { claimsSubmitted } from '../../../lib/metrics';
 
 const MAX_CLAIMS_PER_USER = 3;
 const COOLDOWN_HOURS = 24;
@@ -158,6 +159,9 @@ export const POST: APIRoute = async ({ request }) => {
         })
         .where(eq(properties.id, propertyId));
 
+      // Track metric
+      claimsSubmitted.inc({ type: 'approved' });
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -168,6 +172,9 @@ export const POST: APIRoute = async ({ request }) => {
         { status: 201, headers: { 'Content-Type': 'application/json' } }
       );
     }
+
+    // Track metric
+    claimsSubmitted.inc({ type: 'disputed' });
 
     // It's a dispute - needs admin review
     return new Response(

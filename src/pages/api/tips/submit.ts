@@ -16,6 +16,7 @@ import type { APIRoute } from 'astro';
 import { db, properties, contributions } from '../../../lib/db';
 import { eq, and } from 'drizzle-orm';
 import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { tipsSubmitted } from '../../../lib/metrics';
 
 // Limits
 const MAX_TIP_LENGTH = 280;
@@ -134,6 +135,9 @@ export const POST: APIRoute = async ({ request }) => {
     });
 
     console.log(`💡 New tip submitted for property ${propertyId} by user ${user.id}`);
+
+    // Track metric
+    tipsSubmitted.inc();
 
     return new Response(
       JSON.stringify({
