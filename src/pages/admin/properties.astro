@@ -1,0 +1,248 @@
+---
+/**
+ * Admin Properties Management
+ * View, edit, and delete all properties
+ */
+
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { db, properties, propertyPhotos } from '../../lib/db';
+import { desc, eq } from 'drizzle-orm';
+import { validateSession, getSessionFromCookies } from '../../lib/auth';
+
+// Check authentication and admin role
+const cookieHeader = Astro.request.headers.get('cookie');
+const sessionToken = getSessionFromCookies(cookieHeader);
+const session = sessionToken ? await validateSession(sessionToken) : null;
+const user = session?.user || null;
+
+// Redirect if not admin/moderator
+if (!user || (user.role !== 'admin' && user.role !== 'moderator')) {
+  return Astro.redirect('/login?redirect=/admin/properties');
+}
+
+// Fetch all properties with photo count
+const allProperties = await db
+  .select({
+    id: properties.id,
+    address: properties.address,
+    city: properties.city,
+    displayName: properties.displayName,
+    status: properties.status,
+    featured: properties.featured,
+    avgRating: properties.avgRating,
+    ratingCount: properties.ratingCount,
+    photoCount: properties.photoCount,
+    createdAt: properties.createdAt,
+  })
+  .from(properties)
+  .orderBy(desc(properties.createdAt));
+
+const statusColors: Record<string, string> = {
+  pending: 'bg-yellow-500/20 text-yellow-300',
+  approved: 'bg-green-500/20 text-green-300',
+  rejected: 'bg-red-500/20 text-red-300',
+};
+---
+
+<BaseLayout title="Manage Properties | Light the Ham!">
+  <div class="mx-auto max-w-6xl px-4 py-8">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-amber-400">Manage Properties</h1>
+        <p class="text-slate-400 mt-2">View, edit, and delete properties</p>
+      </div>
+      <a href="/admin" class="text-slate-400 hover:text-amber-400">
+        ← Back to Admin
+      </a>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-amber-400">{allProperties.length}</div>
+        <div class="text-slate-400">Total Properties</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-green-400">{allProperties.filter(p => p.status === 'approved').length}</div>
+        <div class="text-slate-400">Approved</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-yellow-400">{allProperties.filter(p => p.status === 'pending').length}</div>
+        <div class="text-slate-400">Pending</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-red-400">{allProperties.filter(p => p.status === 'rejected').length}</div>
+        <div class="text-slate-400">Rejected</div>
+      </div>
+    </div>
+
+    <!-- Properties Table -->
+    <div class="bg-slate-800 rounded-lg overflow-hidden">
+      <table class="w-full">
+        <thead class="bg-slate-700">
+          <tr>
+            <th class="text-left px-4 py-3 text-sm font-medium text-slate-300">Property</th>
+            <th class="text-left px-4 py-3 text-sm font-medium text-slate-300">Status</th>
+            <th class="text-left px-4 py-3 text-sm font-medium text-slate-300">Rating</th>
+            <th class="text-left px-4 py-3 text-sm font-medium text-slate-300">Photos</th>
+            <th class="text-right px-4 py-3 text-sm font-medium text-slate-300">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-700">
+          {allProperties.map((prop) => (
+            <tr class="hover:bg-slate-700/50" data-property-id={prop.id}>
+              <td class="px-4 py-3">
+                <div>
+                  <a href={`/properties/${prop.id}`} class="font-medium text-amber-400 hover:text-amber-300">
+                    {prop.displayName || prop.address}
+                  </a>
+                  <div class="text-sm text-slate-400">{prop.address}, {prop.city}</div>
+                </div>
+              </td>
+              <td class="px-4 py-3">
+                <span class={`inline-block px-2 py-1 rounded text-xs font-medium ${statusColors[prop.status] || 'bg-slate-600 text-slate-300'}`}>
+                  {prop.status}
+                </span>
+                {prop.featured && (
+                  <span class="ml-2 inline-block px-2 py-1 rounded text-xs font-medium bg-amber-500/20 text-amber-300">
+                    Featured
+                  </span>
+                )}
+              </td>
+              <td class="px-4 py-3">
+                {prop.avgRating ? (
+                  <span class="text-amber-400">{prop.avgRating.toFixed(1)} ★</span>
+                ) : (
+                  <span class="text-slate-500">—</span>
+                )}
+                <span class="text-slate-500 text-sm ml-1">({prop.ratingCount || 0})</span>
+              </td>
+              <td class="px-4 py-3 text-slate-300">{prop.photoCount || 0}</td>
+              <td class="px-4 py-3 text-right">
+                <div class="flex gap-2 justify-end">
+                  {prop.status === 'pending' && (
+                    <button
+                      class="approve-btn bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
+                      data-action="approve"
+                    >
+                      Approve
+                    </button>
+                  )}
+                  {prop.status === 'approved' && (
+                    <button
+                      class="feature-btn bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded text-sm"
+                      data-action="feature"
+                      data-featured={prop.featured ? 'true' : 'false'}
+                    >
+                      {prop.featured ? 'Unfeature' : 'Feature'}
+                    </button>
+                  )}
+                  <button
+                    class="delete-btn bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"
+                    data-action="delete"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {allProperties.length === 0 && (
+        <div class="text-center py-12 text-slate-500">
+          No properties yet
+        </div>
+      )}
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="delete-modal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+    <div class="bg-slate-800 rounded-lg p-6 max-w-md mx-4">
+      <h3 class="text-xl font-bold mb-4">Delete Property?</h3>
+      <p class="text-slate-400 mb-6">
+        This will permanently delete this property and all associated photos, ratings, and tips.
+        This action cannot be undone.
+      </p>
+      <div class="flex gap-3 justify-end">
+        <button id="cancel-delete" class="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded">
+          Cancel
+        </button>
+        <button id="confirm-delete" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded">
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById('delete-modal') as HTMLDivElement;
+    const cancelBtn = document.getElementById('cancel-delete') as HTMLButtonElement;
+    const confirmBtn = document.getElementById('confirm-delete') as HTMLButtonElement;
+    let pendingDeleteId: string | null = null;
+
+    // Handle all button clicks
+    document.querySelectorAll('tr[data-property-id]').forEach((row) => {
+      const propertyId = row.getAttribute('data-property-id');
+
+      row.querySelector('.approve-btn')?.addEventListener('click', async () => {
+        await moderateProperty(propertyId!, 'approve');
+        location.reload();
+      });
+
+      row.querySelector('.feature-btn')?.addEventListener('click', async (e) => {
+        const btn = e.target as HTMLButtonElement;
+        const isFeatured = btn.dataset.featured === 'true';
+        await toggleFeature(propertyId!, !isFeatured);
+        location.reload();
+      });
+
+      row.querySelector('.delete-btn')?.addEventListener('click', () => {
+        pendingDeleteId = propertyId;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      });
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      pendingDeleteId = null;
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+      if (pendingDeleteId) {
+        await deleteProperty(pendingDeleteId);
+        location.reload();
+      }
+    });
+
+    async function moderateProperty(id: string, action: string) {
+      await fetch('/api/admin/moderate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entityType: 'property', entityId: id, action }),
+      });
+    }
+
+    async function toggleFeature(id: string, featured: boolean) {
+      await fetch('/api/admin/properties', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, featured }),
+      });
+    }
+
+    async function deleteProperty(id: string) {
+      await fetch('/api/admin/properties', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+    }
+  </script>
+</BaseLayout>

@@ -1,0 +1,88 @@
+---
+// BaseLayout.astro - The main wrapper for all pages
+// Like a base.html template in Django/Jinja2
+
+// Import global styles (Tailwind)
+import '../styles/global.css';
+import { validateSession, getSessionFromCookies } from '../lib/auth';
+
+// Props interface - like Python type hints for function parameters
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+// Destructure props with defaults (like **kwargs with defaults)
+const {
+  title = "Light the Ham! | Greater Birmingham Christmas Lights Guide",
+  description = "Discover and rate the best Christmas light displays in the Greater Birmingham Metro Area"
+} = Astro.props;
+
+// Check if user is logged in
+const cookieHeader = Astro.request.headers.get('cookie');
+const sessionToken = getSessionFromCookies(cookieHeader);
+const session = sessionToken ? await validateSession(sessionToken) : null;
+const user = session?.user || null;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body class="min-h-screen bg-slate-900 text-white">
+    <!-- Header -->
+    <header class="border-b border-slate-700 bg-slate-800">
+      <nav class="mx-auto max-w-6xl px-4 py-4">
+        <div class="flex items-center justify-between">
+          <a href="/" class="text-2xl font-bold text-amber-400">
+            🎄 Light the Ham!
+          </a>
+          <div class="flex items-center gap-6">
+            <a href="/map" class="hover:text-amber-400">Map</a>
+            <a href="/tours" class="hover:text-amber-400">Tours</a>
+            <a href="/rankings" class="hover:text-amber-400">Rankings</a>
+            <a href="/submit" class="hover:text-amber-400">Submit</a>
+            {user ? (
+              <div class="flex items-center gap-3 border-l border-slate-600 pl-6">
+                {user.avatarUrl && (
+                  <img src={user.avatarUrl} alt="" class="w-8 h-8 rounded-full" />
+                )}
+                <span class="text-sm text-slate-300">{user.displayName || user.email || 'User'}</span>
+                <a href="/my-properties" class="text-sm text-slate-400 hover:text-amber-400">My Properties</a>
+                {(user.role === 'admin' || user.role === 'moderator') && (
+                  <a href="/admin" class="text-sm text-amber-400 hover:text-amber-300 font-medium">Admin</a>
+                )}
+                <a href="/api/auth/logout" class="text-sm text-slate-400 hover:text-amber-400">Logout</a>
+              </div>
+            ) : (
+              <a href="/login" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-medium py-1.5 px-4 rounded-lg transition-colors text-sm">
+                Sign In
+              </a>
+            )}
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <!-- Main content - <slot /> is like {% block content %} in Jinja -->
+    <main>
+      <slot />
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-700 bg-slate-800 py-8 mt-auto">
+      <div class="mx-auto max-w-6xl px-4 text-center text-slate-400">
+        <p>Light the Ham! &copy; 2025 | Greater Birmingham Metro Area</p>
+        <p class="text-sm mt-2">A community guide to Christmas light displays</p>
+        <p class="text-xs mt-3">
+          <a href="mailto:devs@lighttheham.com" class="hover:text-amber-400 transition-colors">Contact Us</a>
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

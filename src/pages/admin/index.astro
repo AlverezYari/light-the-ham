@@ -1,0 +1,493 @@
+---
+/**
+ * Admin Moderation Panel
+ * View and moderate pending photos, tips, and properties
+ */
+
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { db, contributions, propertyPhotos, properties, users, tours, tourStops, propertyClaims } from '../../lib/db';
+import { eq, isNotNull, and, desc, or } from 'drizzle-orm';
+import { validateSession, getSessionFromCookies } from '../../lib/auth';
+
+// Check authentication and admin role
+const cookieHeader = Astro.request.headers.get('cookie');
+const sessionToken = getSessionFromCookies(cookieHeader);
+const session = sessionToken ? await validateSession(sessionToken) : null;
+const user = session?.user || null;
+
+// Redirect if not admin/moderator
+if (!user || (user.role !== 'admin' && user.role !== 'moderator')) {
+  return Astro.redirect('/login?redirect=/admin');
+}
+
+// Fetch pending photos
+const pendingPhotos = await db
+  .select({
+    id: propertyPhotos.id,
+    url: propertyPhotos.url,
+    propertyId: propertyPhotos.propertyId,
+    createdAt: propertyPhotos.createdAt,
+    propertyAddress: properties.address,
+    propertyCity: properties.city,
+  })
+  .from(propertyPhotos)
+  .innerJoin(properties, eq(propertyPhotos.propertyId, properties.id))
+  .where(eq(propertyPhotos.status, 'pending'))
+  .orderBy(propertyPhotos.createdAt);
+
+// Fetch pending tips (contributions with tips)
+const pendingTips = await db
+  .select({
+    id: contributions.id,
+    tip: contributions.tip,
+    propertyId: contributions.propertyId,
+    userId: contributions.userId,
+    createdAt: contributions.createdAt,
+    propertyAddress: properties.address,
+    propertyCity: properties.city,
+    userEmail: users.email,
+    userName: users.displayName,
+  })
+  .from(contributions)
+  .innerJoin(properties, eq(contributions.propertyId, properties.id))
+  .leftJoin(users, eq(contributions.userId, users.id))
+  .where(and(eq(contributions.status, 'pending'), isNotNull(contributions.tip)))
+  .orderBy(contributions.createdAt);
+
+// Fetch pending properties with owner info
+const pendingProperties = await db
+  .select({
+    id: properties.id,
+    address: properties.address,
+    city: properties.city,
+    displayName: properties.displayName,
+    description: properties.description,
+    createdAt: properties.createdAt,
+    ownerId: properties.ownerId,
+    ownerEmail: users.email,
+    ownerName: users.displayName,
+  })
+  .from(properties)
+  .leftJoin(users, eq(properties.ownerId, users.id))
+  .where(eq(properties.status, 'pending'))
+  .orderBy(properties.createdAt);
+
+// Fetch all tours for moderation
+const allTours = await db
+  .select({
+    id: tours.id,
+    slug: tours.slug,
+    name: tours.name,
+    creatorName: tours.creatorName,
+    viewCount: tours.viewCount,
+    isFeatured: tours.isFeatured,
+    createdAt: tours.createdAt,
+  })
+  .from(tours)
+  .orderBy(desc(tours.createdAt));
+
+// Get stop counts for tours
+const toursWithCounts = await Promise.all(
+  allTours.map(async (tour) => {
+    const stops = await db
+      .select({ id: tourStops.id })
+      .from(tourStops)
+      .where(eq(tourStops.tourId, tour.id));
+    return { ...tour, stopCount: stops.length };
+  })
+);
+
+// Fetch pending/disputed ownership claims
+// We need to alias users table for claimant vs current owner
+const pendingClaims = await db
+  .select({
+    id: propertyClaims.id,
+    status: propertyClaims.status,
+    createdAt: propertyClaims.createdAt,
+    propertyId: propertyClaims.propertyId,
+    propertyAddress: properties.address,
+    propertyCity: properties.city,
+    claimantId: propertyClaims.userId,
+    claimantEmail: users.email,
+    claimantName: users.displayName,
+    currentOwnerId: properties.ownerId,
+  })
+  .from(propertyClaims)
+  .innerJoin(properties, eq(propertyClaims.propertyId, properties.id))
+  .innerJoin(users, eq(propertyClaims.userId, users.id))
+  .where(
+    or(
+      eq(propertyClaims.status, 'pending'),
+      eq(propertyClaims.status, 'disputed')
+    )
+  )
+  .orderBy(propertyClaims.createdAt);
+
+// Get current owner info for disputed claims
+const claimsWithOwners = await Promise.all(
+  pendingClaims.map(async (claim) => {
+    let currentOwner = null;
+    if (claim.currentOwnerId) {
+      const [owner] = await db
+        .select({ email: users.email, displayName: users.displayName })
+        .from(users)
+        .where(eq(users.id, claim.currentOwnerId))
+        .limit(1);
+      currentOwner = owner;
+    }
+    return { ...claim, currentOwner };
+  })
+);
+---
+
+<BaseLayout title="Admin Panel | Light the Ham!">
+  <div class="mx-auto max-w-6xl px-4 py-8">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-amber-400">Admin Panel</h1>
+        <p class="text-slate-400 mt-2">Moderate pending submissions</p>
+      </div>
+      <a
+        href="/admin/properties"
+        class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+      >
+        Manage All Properties →
+      </a>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-amber-400">{pendingPhotos.length}</div>
+        <div class="text-slate-400">Pending Photos</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-amber-400">{pendingTips.length}</div>
+        <div class="text-slate-400">Pending Tips</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-amber-400">{pendingProperties.length}</div>
+        <div class="text-slate-400">Pending Properties</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-purple-400">{claimsWithOwners.length}</div>
+        <div class="text-slate-400">Ownership Claims</div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-3xl font-bold text-blue-400">{toursWithCounts.length}</div>
+        <div class="text-slate-400">Total Tours</div>
+      </div>
+    </div>
+
+    <!-- Pending Photos -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4 border-b border-slate-700 pb-2">Pending Photos</h2>
+      {pendingPhotos.length === 0 ? (
+        <p class="text-slate-500">No pending photos</p>
+      ) : (
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {pendingPhotos.map((photo) => (
+            <div class="bg-slate-800 rounded-lg overflow-hidden" data-item-id={photo.id} data-item-type="photo">
+              <img src={photo.url} alt="Pending photo" class="w-full h-48 object-cover" />
+              <div class="p-4">
+                <p class="text-sm text-slate-400 mb-2">
+                  <a href={`/properties/${photo.propertyId}`} class="hover:text-amber-400">
+                    {photo.propertyAddress}, {photo.propertyCity}
+                  </a>
+                </p>
+                <div class="flex gap-2">
+                  <button class="approve-btn flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Approve
+                  </button>
+                  <button class="reject-btn flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+
+    <!-- Pending Tips -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4 border-b border-slate-700 pb-2">Pending Tips</h2>
+      {pendingTips.length === 0 ? (
+        <p class="text-slate-500">No pending tips</p>
+      ) : (
+        <div class="space-y-4">
+          {pendingTips.map((tip) => (
+            <div class="bg-slate-800 rounded-lg p-4" data-item-id={tip.id} data-item-type="tip">
+              <div class="flex justify-between items-start gap-4">
+                <div class="flex-1">
+                  <p class="text-white mb-2">"{tip.tip}"</p>
+                  <p class="text-sm text-slate-400">
+                    <a href={`/properties/${tip.propertyId}`} class="hover:text-amber-400">
+                      {tip.propertyAddress}, {tip.propertyCity}
+                    </a>
+                    {' · '}
+                    by {tip.userName || tip.userEmail || 'Unknown'}
+                  </p>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                  <button class="approve-btn bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Approve
+                  </button>
+                  <button class="reject-btn bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+
+    <!-- Pending Properties -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4 border-b border-slate-700 pb-2">Pending Properties</h2>
+      {pendingProperties.length === 0 ? (
+        <p class="text-slate-500">No pending properties</p>
+      ) : (
+        <div class="space-y-4">
+          {pendingProperties.map((prop) => (
+            <div class="bg-slate-800 rounded-lg p-4" data-item-id={prop.id} data-item-type="property">
+              <div class="flex justify-between items-start gap-4">
+                <div class="flex-1">
+                  <h3 class="text-lg font-medium text-amber-400">{prop.displayName || prop.address}</h3>
+                  <p class="text-slate-400">{prop.address}, {prop.city}</p>
+                  {prop.description && (
+                    <p class="text-sm text-slate-500 mt-2 line-clamp-2">{prop.description}</p>
+                  )}
+                  {prop.ownerId && (
+                    <p class="text-sm text-green-400 mt-2">
+                      ✓ Owner claimed by: {prop.ownerName || prop.ownerEmail || 'Unknown user'}
+                    </p>
+                  )}
+                </div>
+                <div class="flex gap-2 shrink-0">
+                  <button class="approve-btn bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Approve
+                  </button>
+                  <button class="reject-btn bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+
+    <!-- Ownership Claims -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4 border-b border-slate-700 pb-2">Ownership Claims</h2>
+      {claimsWithOwners.length === 0 ? (
+        <p class="text-slate-500">No pending ownership claims</p>
+      ) : (
+        <div class="space-y-4">
+          {claimsWithOwners.map((claim) => (
+            <div
+              class={`rounded-lg p-4 ${claim.status === 'disputed' ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-800'}`}
+              data-item-id={claim.id}
+              data-item-type="claim"
+            >
+              <div class="flex justify-between items-start gap-4">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-1">
+                    {claim.status === 'disputed' && (
+                      <span class="bg-amber-500 text-slate-900 text-xs font-bold px-2 py-0.5 rounded">DISPUTE</span>
+                    )}
+                    <a href={`/properties/${claim.propertyId}`} class="text-lg font-medium text-amber-400 hover:text-amber-300">
+                      {claim.propertyAddress}, {claim.propertyCity}
+                    </a>
+                  </div>
+                  <p class="text-sm text-slate-400">
+                    Claimed by: <span class="text-white">{claim.claimantName || 'Unknown'}</span>
+                    {claim.claimantEmail && (
+                      <a href={`mailto:${claim.claimantEmail}`} class="ml-2 text-blue-400 hover:text-blue-300">
+                        {claim.claimantEmail}
+                      </a>
+                    )}
+                  </p>
+                  {claim.currentOwner && (
+                    <p class="text-sm text-slate-400 mt-1">
+                      Current owner: <span class="text-red-400">{claim.currentOwner.displayName || 'Unknown'}</span>
+                      {claim.currentOwner.email && (
+                        <a href={`mailto:${claim.currentOwner.email}`} class="ml-2 text-blue-400 hover:text-blue-300">
+                          {claim.currentOwner.email}
+                        </a>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div class="flex gap-2 shrink-0">
+                  <button class="approve-btn bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Approve
+                  </button>
+                  <button class="reject-btn bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded text-sm font-medium">
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+
+    <!-- Tours -->
+    <section class="mb-10">
+      <h2 class="text-xl font-semibold mb-4 border-b border-slate-700 pb-2">Tours</h2>
+      {toursWithCounts.length === 0 ? (
+        <p class="text-slate-500">No tours created yet</p>
+      ) : (
+        <div class="space-y-3">
+          {toursWithCounts.map((tour) => (
+            <div
+              class={`rounded-lg p-4 ${tour.isFeatured ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-800'}`}
+              data-item-id={tour.id}
+              data-item-type="tour"
+              data-featured={tour.isFeatured ? 'true' : 'false'}
+            >
+              <div class="flex justify-between items-center gap-4">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    {tour.isFeatured && (
+                      <span class="text-amber-400" title="Featured">★</span>
+                    )}
+                    <a href={`/tours/${tour.slug}`} class="text-lg font-medium text-amber-400 hover:text-amber-300 truncate">
+                      {tour.name}
+                    </a>
+                  </div>
+                  <p class="text-sm text-slate-400 mt-1">
+                    by {tour.creatorName || 'Anonymous'} · {tour.stopCount} stops · {tour.viewCount || 0} views
+                  </p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <a
+                    href={`/tours/${tour.slug}`}
+                    target="_blank"
+                    class="text-slate-400 hover:text-white text-sm"
+                  >
+                    View →
+                  </a>
+                  {tour.isFeatured ? (
+                    <button class="unfeature-btn bg-slate-600 hover:bg-slate-500 text-white py-2 px-3 rounded text-sm font-medium">
+                      Unfeature
+                    </button>
+                  ) : (
+                    <button class="feature-btn bg-amber-500 hover:bg-amber-600 text-slate-900 py-2 px-3 rounded text-sm font-medium">
+                      Feature
+                    </button>
+                  )}
+                  <button class="delete-btn bg-red-600 hover:bg-red-700 text-white py-2 px-3 rounded text-sm font-medium">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  </div>
+
+  <script>
+    // Handle moderation actions
+    document.querySelectorAll('[data-item-id]').forEach((item) => {
+      const itemId = item.getAttribute('data-item-id');
+      const itemType = item.getAttribute('data-item-type');
+
+      const approveBtn = item.querySelector('.approve-btn');
+      const rejectBtn = item.querySelector('.reject-btn');
+      const deleteBtn = item.querySelector('.delete-btn');
+      const featureBtn = item.querySelector('.feature-btn');
+      const unfeatureBtn = item.querySelector('.unfeature-btn');
+
+      async function moderate(action: 'approve' | 'reject' | 'delete' | 'feature' | 'unfeature') {
+        // Confirm deletion
+        if (action === 'delete' && !confirm('Are you sure you want to delete this? This cannot be undone.')) {
+          return;
+        }
+
+        // Confirm claim approval - this transfers ownership
+        if (itemType === 'claim' && action === 'approve') {
+          const confirmed = confirm(
+            'APPROVE OWNERSHIP CLAIM\n\n' +
+            'This will transfer property ownership to the claimant.\n\n' +
+            'If there is a current owner, they will lose ownership.\n\n' +
+            'Have you contacted both parties to verify?\n\n' +
+            'Click OK to approve, Cancel to go back.'
+          );
+          if (!confirmed) return;
+        }
+
+        // Confirm claim rejection
+        if (itemType === 'claim' && action === 'reject') {
+          if (!confirm('Reject this ownership claim? The claimant will not become the owner.')) {
+            return;
+          }
+        }
+
+        try {
+          const res = await fetch('/api/admin/moderate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              entityType: itemType,
+              entityId: itemId,
+              action,
+            }),
+          });
+
+          const data = await res.json();
+
+          if (res.ok) {
+            if (action === 'feature' || action === 'unfeature') {
+              // Reload to show updated state
+              location.reload();
+            } else {
+              // Remove item from DOM with animation
+              (item as HTMLElement).style.opacity = '0.5';
+              (item as HTMLElement).style.transition = 'opacity 0.3s';
+              setTimeout(() => {
+                item.remove();
+                updateCounts();
+              }, 300);
+            }
+          } else {
+            alert(data.error || 'Failed to moderate');
+          }
+        } catch (err) {
+          console.error('Moderation error:', err);
+          alert('Failed to moderate');
+        }
+      }
+
+      approveBtn?.addEventListener('click', () => moderate('approve'));
+      rejectBtn?.addEventListener('click', () => moderate('reject'));
+      deleteBtn?.addEventListener('click', () => moderate('delete'));
+      featureBtn?.addEventListener('click', () => moderate('feature'));
+      unfeatureBtn?.addEventListener('click', () => moderate('unfeature'));
+    });
+
+    function updateCounts() {
+      const photoCount = document.querySelectorAll('[data-item-type="photo"]').length;
+      const tipCount = document.querySelectorAll('[data-item-type="tip"]').length;
+      const propertyCount = document.querySelectorAll('[data-item-type="property"]').length;
+      const tourCount = document.querySelectorAll('[data-item-type="tour"]').length;
+
+      const cards = document.querySelectorAll('.grid.grid-cols-1.md\\:grid-cols-4 .bg-slate-800');
+      if (cards[0]) cards[0].querySelector('.text-3xl')!.textContent = String(photoCount);
+      if (cards[1]) cards[1].querySelector('.text-3xl')!.textContent = String(tipCount);
+      if (cards[2]) cards[2].querySelector('.text-3xl')!.textContent = String(propertyCount);
+      if (cards[3]) cards[3].querySelector('.text-3xl')!.textContent = String(tourCount);
+    }
+  </script>
+</BaseLayout>

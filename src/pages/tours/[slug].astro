@@ -1,0 +1,249 @@
+---
+/**
+ * Tour View Page - "/tours/[slug]"
+ *
+ * Shareable tour page showing all stops with navigation options.
+ */
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { db, tours, tourStops, properties, propertyPhotos } from '../../lib/db';
+import { eq, asc } from 'drizzle-orm';
+
+const { slug } = Astro.params;
+
+// Get the tour
+const [tour] = await db
+  .select()
+  .from(tours)
+  .where(eq(tours.slug, slug!))
+  .limit(1);
+
+if (!tour) {
+  return Astro.redirect('/404');
+}
+
+// Increment view count
+await db
+  .update(tours)
+  .set({ viewCount: (tour.viewCount || 0) + 1 })
+  .where(eq(tours.id, tour.id));
+
+// Get stops with property details
+const stops = await db
+  .select({
+    position: tourStops.position,
+    note: tourStops.note,
+    propertyId: properties.id,
+    address: properties.address,
+    city: properties.city,
+    neighborhood: properties.neighborhood,
+    displayName: properties.displayName,
+    lat: properties.lat,
+    lng: properties.lng,
+    avgRating: properties.avgRating,
+    ratingCount: properties.ratingCount,
+    bestTimes: properties.bestTimes,
+  })
+  .from(tourStops)
+  .innerJoin(properties, eq(tourStops.propertyId, properties.id))
+  .where(eq(tourStops.tourId, tour.id))
+  .orderBy(asc(tourStops.position));
+
+// Get primary photo for each stop
+const stopsWithPhotos = await Promise.all(
+  stops.map(async (stop) => {
+    const [photo] = await db
+      .select({ url: propertyPhotos.url })
+      .from(propertyPhotos)
+      .where(eq(propertyPhotos.propertyId, stop.propertyId))
+      .limit(1);
+
+    return {
+      ...stop,
+      primaryPhoto: photo?.url || null,
+      title: stop.displayName || stop.address,
+    };
+  })
+);
+
+// Build navigation URLs
+const waypoints = stopsWithPhotos.map(s => `${s.lat},${s.lng}`);
+const googleMapsUrl = `https://www.google.com/maps/dir/${waypoints.join('/')}`;
+const appleMapsUrl = `https://maps.apple.com/?daddr=${waypoints.map(w => w.replace(',', '%2C')).join('&daddr=')}`;
+
+// Share URL
+const shareUrl = `${Astro.url.origin}/tours/${tour.slug}`;
+
+// Star rating helper
+function renderStars(rating: number | null): string {
+  if (!rating) return '';
+  const fullStars = Math.round(rating);
+  return '★'.repeat(fullStars) + '☆'.repeat(5 - fullStars);
+}
+---
+
+<BaseLayout title={`${tour.name} | Light the Ham!`}>
+  <section class="py-8">
+    <div class="mx-auto max-w-3xl px-4">
+      <!-- Tour Header -->
+      <div class="text-center mb-8">
+        <div class="text-4xl mb-3">🗺️</div>
+        <h1 class="text-3xl font-bold mb-2">{tour.name}</h1>
+        {tour.description && (
+          <p class="text-slate-400 mb-3">{tour.description}</p>
+        )}
+        <p class="text-sm text-slate-500">
+          Created by {tour.creatorName || 'Anonymous'} · {stopsWithPhotos.length} stops · {(tour.viewCount || 0) + 1} views
+        </p>
+      </div>
+
+      <!-- Navigation Buttons -->
+      <div class="flex flex-col sm:flex-row gap-3 justify-center mb-8">
+        <a
+          href={googleMapsUrl}
+          target="_blank"
+          rel="noopener"
+          class="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold py-3 px-6 rounded-lg transition-colors"
+        >
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          Start Tour (Google Maps)
+        </a>
+        <a
+          href={appleMapsUrl}
+          target="_blank"
+          rel="noopener"
+          class="flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+        >
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          Start Tour (Apple Maps)
+        </a>
+      </div>
+
+      <!-- Share Section -->
+      <div class="bg-slate-800 rounded-lg p-4 mb-8">
+        <div class="flex flex-col sm:flex-row items-center gap-3">
+          <span class="text-sm text-slate-400">Share this tour:</span>
+          <input
+            type="text"
+            readonly
+            value={shareUrl}
+            class="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-300 w-full sm:w-auto"
+            onclick="this.select()"
+          />
+          <button
+            id="copy-btn"
+            class="bg-slate-600 hover:bg-slate-500 px-4 py-2 rounded text-sm font-medium transition-colors whitespace-nowrap"
+          >
+            Copy Link
+          </button>
+        </div>
+      </div>
+
+      <!-- Tour Stops -->
+      <div class="space-y-4">
+        <h2 class="text-xl font-semibold flex items-center gap-2">
+          <span>Tour Stops</span>
+          <span class="text-sm font-normal text-slate-400">({stopsWithPhotos.length} displays)</span>
+        </h2>
+
+        {stopsWithPhotos.map((stop, index) => (
+          <div class="bg-slate-800 rounded-lg overflow-hidden flex">
+            <!-- Stop Number -->
+            <div class="bg-amber-500 text-slate-900 font-bold w-12 flex-shrink-0 flex items-center justify-center text-xl">
+              {index + 1}
+            </div>
+
+            <!-- Photo -->
+            <div class="w-24 h-24 flex-shrink-0">
+              {stop.primaryPhoto ? (
+                <img
+                  src={stop.primaryPhoto}
+                  alt={stop.title}
+                  class="w-full h-full object-cover"
+                />
+              ) : (
+                <div class="w-full h-full bg-slate-700 flex items-center justify-center text-2xl">
+                  🎄
+                </div>
+              )}
+            </div>
+
+            <!-- Details -->
+            <div class="p-3 flex-1 min-w-0">
+              <a href={`/properties/${stop.propertyId}`} class="hover:text-amber-400">
+                <h3 class="font-semibold truncate">{stop.title}</h3>
+              </a>
+              <p class="text-sm text-slate-400 truncate">
+                {stop.neighborhood ? `${stop.neighborhood}, ` : ''}{stop.city}
+              </p>
+              {stop.avgRating && stop.ratingCount && stop.ratingCount > 0 && (
+                <p class="text-sm text-amber-400">
+                  {renderStars(stop.avgRating)} {stop.avgRating.toFixed(1)}
+                </p>
+              )}
+              {stop.note && (
+                <p class="text-xs text-slate-500 mt-1 italic">"{stop.note}"</p>
+              )}
+            </div>
+
+            <!-- Quick Navigation -->
+            <div class="flex items-center pr-3">
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}`}
+                target="_blank"
+                rel="noopener"
+                class="p-2 text-slate-400 hover:text-amber-400"
+                title="Navigate to this stop"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <!-- Bottom CTA -->
+      <div class="mt-8 text-center">
+        <a
+          href="/tours/new"
+          class="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300"
+        >
+          <span>Create your own tour</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<script>
+  const copyBtn = document.getElementById('copy-btn');
+  const shareInput = document.querySelector('input[readonly]') as HTMLInputElement;
+
+  copyBtn?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(shareInput.value);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy Link';
+      }, 2000);
+    } catch (err) {
+      shareInput.select();
+      document.execCommand('copy');
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy Link';
+      }, 2000);
+    }
+  });
+</script>

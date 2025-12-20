@@ -1,0 +1,367 @@
+---
+/**
+ * Tour Builder Page - "/tours/new"
+ *
+ * Interactive page for creating shareable tours.
+ */
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { db, properties, propertyPhotos, seasons } from '../../lib/db';
+import { eq, and, desc } from 'drizzle-orm';
+
+// Get current season's approved properties
+const currentSeason = await db
+  .select()
+  .from(seasons)
+  .where(eq(seasons.status, 'active'))
+  .limit(1);
+
+let availableProperties: any[] = [];
+if (currentSeason.length > 0) {
+  const props = await db
+    .select({
+      id: properties.id,
+      address: properties.address,
+      city: properties.city,
+      neighborhood: properties.neighborhood,
+      displayName: properties.displayName,
+      lat: properties.lat,
+      lng: properties.lng,
+      avgRating: properties.avgRating,
+      ratingCount: properties.ratingCount,
+    })
+    .from(properties)
+    .where(
+      and(
+        eq(properties.seasonId, currentSeason[0].id),
+        eq(properties.status, 'approved')
+      )
+    )
+    .orderBy(desc(properties.avgRating));
+
+  // Get photos for each property
+  availableProperties = await Promise.all(
+    props.map(async (prop) => {
+      const [photo] = await db
+        .select({ url: propertyPhotos.url })
+        .from(propertyPhotos)
+        .where(eq(propertyPhotos.propertyId, prop.id))
+        .limit(1);
+      return {
+        ...prop,
+        title: prop.displayName || prop.address,
+        primaryPhoto: photo?.url || null,
+      };
+    })
+  );
+}
+---
+
+<BaseLayout title="Create a Tour | Light the Ham!">
+  <section class="py-8">
+    <div class="mx-auto max-w-4xl px-4">
+      <!-- Header -->
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold mb-2">Create a Tour</h1>
+        <p class="text-slate-400">
+          Build a shareable driving tour of Christmas light displays
+        </p>
+      </div>
+
+      <!-- Success State (hidden by default) -->
+      <div id="success-state" class="hidden">
+        <div class="bg-green-500/20 border border-green-500 rounded-xl p-8 text-center">
+          <div class="text-6xl mb-4">🎉</div>
+          <h2 class="text-2xl font-bold text-green-300 mb-2">Tour Created!</h2>
+          <p class="text-slate-300 mb-4">Share this link with friends and family:</p>
+          <div class="flex flex-col sm:flex-row items-center gap-3 justify-center mb-6">
+            <input
+              type="text"
+              id="tour-url"
+              readonly
+              class="bg-slate-700 border border-slate-600 rounded px-4 py-2 text-center w-full sm:w-96"
+              onclick="this.select()"
+            />
+            <button
+              id="copy-success-btn"
+              class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold px-6 py-2 rounded transition-colors"
+            >
+              Copy
+            </button>
+          </div>
+          <div class="flex gap-4 justify-center">
+            <a id="view-tour-btn" href="#" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-6 rounded-lg">
+              View Tour
+            </a>
+            <button onclick="location.reload()" class="text-amber-400 hover:text-amber-300">
+              Create Another
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Builder (hidden on success) -->
+      <div id="builder-state" class="grid md:grid-cols-2 gap-8">
+        <!-- Available Properties -->
+        <div>
+          <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+            <span>Available Displays</span>
+            <span class="text-sm font-normal text-slate-400">({availableProperties.length})</span>
+          </h2>
+
+          <!-- Search -->
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Search displays..."
+            class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 mb-4 focus:border-amber-500 focus:outline-none"
+          />
+
+          <!-- Property List -->
+          <div id="available-list" class="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+            {availableProperties.map((prop) => (
+              <div
+                class="property-card bg-slate-800 rounded-lg p-3 flex items-center gap-3 cursor-pointer hover:bg-slate-700 transition-colors"
+                data-id={prop.id}
+                data-title={prop.title}
+                data-city={prop.city}
+                data-neighborhood={prop.neighborhood || ''}
+                data-photo={prop.primaryPhoto || ''}
+                data-lat={prop.lat}
+                data-lng={prop.lng}
+              >
+                <div class="w-12 h-12 rounded overflow-hidden flex-shrink-0">
+                  {prop.primaryPhoto ? (
+                    <img src={prop.primaryPhoto} alt="" class="w-full h-full object-cover" />
+                  ) : (
+                    <div class="w-full h-full bg-slate-700 flex items-center justify-center">🎄</div>
+                  )}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="font-medium truncate">{prop.title}</p>
+                  <p class="text-sm text-slate-400 truncate">
+                    {prop.neighborhood ? `${prop.neighborhood}, ` : ''}{prop.city}
+                  </p>
+                </div>
+                <button class="add-btn text-amber-500 hover:text-amber-400 p-1" title="Add to tour">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <!-- Tour Builder -->
+        <div>
+          <h2 class="text-lg font-semibold mb-3">Your Tour</h2>
+
+          <!-- Tour Name -->
+          <input
+            type="text"
+            id="tour-name"
+            placeholder="Tour name (e.g., Smith Family 2025)"
+            class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 mb-4 focus:border-amber-500 focus:outline-none"
+          />
+
+          <!-- Tour Stops -->
+          <div id="tour-stops" class="space-y-2 min-h-[200px] bg-slate-800/50 rounded-lg p-4 mb-4">
+            <p id="empty-message" class="text-slate-500 text-center py-8">
+              Click the + button to add displays to your tour
+            </p>
+          </div>
+
+          <!-- Stop Count -->
+          <p class="text-sm text-slate-400 mb-4">
+            <span id="stop-count">0</span>/20 stops
+          </p>
+
+          <!-- Create Button -->
+          <button
+            id="create-tour-btn"
+            disabled
+            class="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-600 disabled:cursor-not-allowed text-slate-900 font-semibold py-3 px-6 rounded-lg transition-colors"
+          >
+            Create Tour
+          </button>
+
+          <p class="text-xs text-slate-500 text-center mt-3">
+            Drag stops to reorder. Your tour will be publicly shareable.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<script>
+  const availableList = document.getElementById('available-list')!;
+  const tourStops = document.getElementById('tour-stops')!;
+  const emptyMessage = document.getElementById('empty-message')!;
+  const stopCount = document.getElementById('stop-count')!;
+  const tourNameInput = document.getElementById('tour-name') as HTMLInputElement;
+  const createBtn = document.getElementById('create-tour-btn') as HTMLButtonElement;
+  const searchInput = document.getElementById('search-input') as HTMLInputElement;
+  const builderState = document.getElementById('builder-state')!;
+  const successState = document.getElementById('success-state')!;
+  const tourUrlInput = document.getElementById('tour-url') as HTMLInputElement;
+  const viewTourBtn = document.getElementById('view-tour-btn') as HTMLAnchorElement;
+  const copySuccessBtn = document.getElementById('copy-success-btn')!;
+
+  let stops: string[] = [];
+
+  // Search functionality
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.toLowerCase();
+    const cards = availableList.querySelectorAll('.property-card') as NodeListOf<HTMLElement>;
+    cards.forEach(card => {
+      const title = card.dataset.title?.toLowerCase() || '';
+      const city = card.dataset.city?.toLowerCase() || '';
+      const neighborhood = card.dataset.neighborhood?.toLowerCase() || '';
+      const matches = title.includes(query) || city.includes(query) || neighborhood.includes(query);
+      card.style.display = matches ? 'flex' : 'none';
+    });
+  });
+
+  // Add to tour
+  availableList.addEventListener('click', (e) => {
+    const addBtn = (e.target as HTMLElement).closest('.add-btn');
+    if (!addBtn) return;
+
+    const card = addBtn.closest('.property-card') as HTMLElement;
+    if (!card || stops.includes(card.dataset.id!)) return;
+    if (stops.length >= 20) {
+      alert('Maximum 20 stops per tour');
+      return;
+    }
+
+    addStop(card);
+  });
+
+  function addStop(card: HTMLElement) {
+    const id = card.dataset.id!;
+    stops.push(id);
+
+    emptyMessage.classList.add('hidden');
+
+    const stopEl = document.createElement('div');
+    stopEl.className = 'tour-stop bg-slate-700 rounded-lg p-3 flex items-center gap-3';
+    stopEl.dataset.id = id;
+    stopEl.innerHTML = `
+      <div class="text-amber-500 font-bold w-6 text-center">${stops.length}</div>
+      <div class="w-10 h-10 rounded overflow-hidden flex-shrink-0">
+        ${card.dataset.photo
+          ? `<img src="${card.dataset.photo}" alt="" class="w-full h-full object-cover" />`
+          : '<div class="w-full h-full bg-slate-600 flex items-center justify-center">🎄</div>'
+        }
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="font-medium truncate text-sm">${card.dataset.title}</p>
+        <p class="text-xs text-slate-400 truncate">${card.dataset.city}</p>
+      </div>
+      <button class="remove-btn text-red-400 hover:text-red-300 p-1" title="Remove">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    `;
+
+    tourStops.appendChild(stopEl);
+    updateUI();
+
+    // Hide from available list
+    card.classList.add('opacity-50', 'pointer-events-none');
+  }
+
+  // Remove from tour
+  tourStops.addEventListener('click', (e) => {
+    const removeBtn = (e.target as HTMLElement).closest('.remove-btn');
+    if (!removeBtn) return;
+
+    const stopEl = removeBtn.closest('.tour-stop') as HTMLElement;
+    const id = stopEl.dataset.id!;
+
+    stops = stops.filter(s => s !== id);
+    stopEl.remove();
+
+    // Show in available list again
+    const card = availableList.querySelector(`[data-id="${id}"]`);
+    card?.classList.remove('opacity-50', 'pointer-events-none');
+
+    updateNumbers();
+    updateUI();
+  });
+
+  function updateNumbers() {
+    const stopEls = tourStops.querySelectorAll('.tour-stop');
+    stopEls.forEach((el, i) => {
+      const numEl = el.querySelector('.text-amber-500');
+      if (numEl) numEl.textContent = String(i + 1);
+    });
+  }
+
+  function updateUI() {
+    stopCount.textContent = String(stops.length);
+    createBtn.disabled = stops.length === 0 || !tourNameInput.value.trim();
+
+    if (stops.length === 0) {
+      emptyMessage.classList.remove('hidden');
+    }
+  }
+
+  tourNameInput.addEventListener('input', updateUI);
+
+  // Create tour
+  createBtn.addEventListener('click', async () => {
+    if (stops.length === 0 || !tourNameInput.value.trim()) return;
+
+    createBtn.disabled = true;
+    createBtn.textContent = 'Creating...';
+
+    try {
+      const res = await fetch('/api/tours', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: tourNameInput.value.trim(),
+          propertyIds: stops,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to create tour');
+      }
+
+      const data = await res.json();
+      const tourUrl = `${window.location.origin}${data.url}`;
+
+      // Show success state
+      builderState.classList.add('hidden');
+      successState.classList.remove('hidden');
+      tourUrlInput.value = tourUrl;
+      viewTourBtn.href = data.url;
+
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create tour');
+      createBtn.disabled = false;
+      createBtn.textContent = 'Create Tour';
+    }
+  });
+
+  // Copy success URL
+  copySuccessBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(tourUrlInput.value);
+      copySuccessBtn.textContent = 'Copied!';
+      setTimeout(() => { copySuccessBtn.textContent = 'Copy'; }, 2000);
+    } catch {
+      tourUrlInput.select();
+      document.execCommand('copy');
+      copySuccessBtn.textContent = 'Copied!';
+      setTimeout(() => { copySuccessBtn.textContent = 'Copy'; }, 2000);
+    }
+  });
+</script>

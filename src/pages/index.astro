@@ -1,0 +1,148 @@
+---
+/**
+ * Homepage - "/"
+ *
+ * This page uses SSR to fetch live stats from the database.
+ * The `prerender = false` directive tells Astro to render this
+ * page on each request (like a Flask route) instead of at build time.
+ */
+
+// Enable SSR for this page (not static)
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { db, properties, seasons } from '../lib/db';
+import { eq, and, count } from 'drizzle-orm';
+
+// Fetch stats from database
+const currentSeason = await db.select().from(seasons).where(eq(seasons.status, 'active')).limit(1);
+const seasonId = currentSeason[0]?.id;
+const seasonYear = currentSeason[0]?.year || 2025;
+
+// Count approved properties for current season
+let propertyCount = 0;
+if (seasonId) {
+  const result = await db
+    .select({ count: count() })
+    .from(properties)
+    .where(
+      and(
+        eq(properties.seasonId, seasonId),
+        eq(properties.status, 'approved')
+      )
+    );
+  propertyCount = result[0]?.count || 0;
+}
+
+// Get unique cities from approved properties
+let neighborhoodCount = 0;
+if (seasonId) {
+  const cities = await db
+    .selectDistinct({ city: properties.city })
+    .from(properties)
+    .where(
+      and(
+        eq(properties.seasonId, seasonId),
+        eq(properties.status, 'approved')
+      )
+    );
+  neighborhoodCount = cities.length;
+}
+
+const stats = {
+  properties: propertyCount,
+  neighborhoods: neighborhoodCount || 12,  // Fallback for display
+  season: seasonYear
+};
+---
+
+<BaseLayout>
+  <!-- Hero Section -->
+  <section class="bg-gradient-to-b from-slate-800 to-slate-900 py-20">
+    <div class="mx-auto max-w-4xl px-4 text-center">
+      <h1 class="text-5xl font-bold mb-4">
+        <span class="text-amber-400">Light</span> the Ham! 🎄
+      </h1>
+      <p class="text-xl text-slate-300 mb-8">
+        Your guide to the best Christmas light displays in the Greater Birmingham Metro Area
+      </p>
+      <div class="flex justify-center gap-4">
+        <a
+          href="/map"
+          class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold px-6 py-3 rounded-lg"
+        >
+          Explore Map
+        </a>
+        <a
+          href="/submit"
+          class="border border-amber-500 text-amber-400 hover:bg-amber-500/10 px-6 py-3 rounded-lg"
+        >
+          Submit a Display
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Status Banner -->
+  <section class="bg-amber-500/10 border-y border-amber-500/30 py-4">
+    <div class="mx-auto max-w-4xl px-4 text-center">
+      <p class="text-amber-300">
+        📢 <strong>Season {stats.season} Data Collection</strong> — We're gathering
+        display locations for our 2026 launch. Help us build the database!
+      </p>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-16">
+    <div class="mx-auto max-w-4xl px-4">
+      <h2 class="text-3xl font-bold text-center mb-12">How It Works</h2>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="text-center">
+          <div class="text-4xl mb-4">📍</div>
+          <h3 class="text-xl font-semibold mb-2">Submit</h3>
+          <p class="text-slate-400">
+            Know a great display? Submit the address and photos to add it to our map.
+          </p>
+        </div>
+        <div class="text-center">
+          <div class="text-4xl mb-4">⭐</div>
+          <h3 class="text-xl font-semibold mb-2">Rate</h3>
+          <p class="text-slate-400">
+            Vote for your favorite displays and help others find the best lights.
+          </p>
+        </div>
+        <div class="text-center">
+          <div class="text-4xl mb-4">🗺️</div>
+          <h3 class="text-xl font-semibold mb-2">Explore</h3>
+          <p class="text-slate-400">
+            Browse the map, plan your route, and enjoy the holiday magic!
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live Stats from Database -->
+  <section class="bg-slate-800 py-16">
+    <div class="mx-auto max-w-4xl px-4">
+      <div class="grid md:grid-cols-3 gap-8 text-center">
+        <div>
+          <div class="text-4xl font-bold text-amber-400">{stats.properties}</div>
+          <div class="text-slate-400">Displays Approved</div>
+        </div>
+        <div>
+          <div class="text-4xl font-bold text-amber-400">{stats.neighborhoods || '—'}</div>
+          <div class="text-slate-400">Neighborhoods</div>
+        </div>
+        <div>
+          <div class="text-4xl font-bold text-amber-400">{stats.season}</div>
+          <div class="text-slate-400">Season</div>
+        </div>
+      </div>
+      <p class="text-center text-slate-500 text-sm mt-6">
+        📊 Live stats from database
+      </p>
+    </div>
+  </section>
+</BaseLayout>

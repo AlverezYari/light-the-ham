@@ -1,0 +1,379 @@
+---
+/**
+ * PropertyMap Component
+ *
+ * Interactive Leaflet map showing Christmas light displays.
+ * Loads Leaflet from CDN and initializes after DOM ready.
+ */
+
+interface Props {
+  class?: string;
+}
+
+const { class: className = '' } = Astro.props;
+---
+
+<!-- Leaflet CSS -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+  crossorigin=""
+/>
+
+<!-- Leaflet JS - loaded before our script -->
+<script is:inline src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- Leaflet.heat for heatmap layer -->
+<script is:inline src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+<!-- Map Wrapper -->
+<div class:list={['relative w-full h-full', className]}>
+  <!-- Loading state - OUTSIDE the map container -->
+  <div id="map-loading" class="absolute inset-0 flex items-center justify-center bg-slate-800 text-slate-400 z-10">
+    <span>Loading map...</span>
+  </div>
+
+  <!-- Map Container - EMPTY for Leaflet -->
+  <div id="property-map" class="w-full h-full" style="min-height: 500px; background: #334155;"></div>
+
+  <!-- Heatmap Toggle Button -->
+  <button
+    id="heatmap-toggle"
+    class="absolute top-4 right-4 z-[1000] bg-slate-800 hover:bg-slate-700 text-white px-3 py-2 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2 border border-slate-600"
+    title="Toggle heatmap view"
+  >
+    <span id="heatmap-icon">🔥</span>
+    <span id="heatmap-label">Heatmap</span>
+  </button>
+</div>
+
+<style>
+  /* Custom popup styles */
+  :global(.leaflet-popup-content-wrapper) {
+    background: #1e293b !important;
+    color: #fff !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+  }
+
+  :global(.leaflet-popup-tip) {
+    background: #1e293b !important;
+  }
+
+  :global(.leaflet-popup-content) {
+    margin: 12px !important;
+  }
+
+  :global(.property-popup) {
+    min-width: 220px;
+  }
+
+  :global(.property-popup img) {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    background: #334155;
+  }
+
+  :global(.property-popup h3) {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 4px;
+    color: #fff;
+  }
+
+  :global(.property-popup .address) {
+    color: #94a3b8;
+    font-size: 0.875rem;
+    margin-bottom: 8px;
+  }
+
+  :global(.property-popup .rating) {
+    color: #fbbf24;
+    margin-bottom: 8px;
+  }
+
+  :global(.property-popup .view-link) {
+    display: inline-block;
+    background: #f59e0b;
+    color: #0f172a;
+    padding: 6px 12px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+
+  :global(.property-popup .view-link:hover) {
+    background: #d97706;
+  }
+
+  :global(.custom-marker) {
+    background: transparent !important;
+    border: none !important;
+  }
+</style>
+
+<!-- Initialize map - inline script runs immediately after Leaflet loads -->
+<script is:inline>
+(function() {
+  'use strict';
+
+  // State for layer toggling
+  var markersLayer = null;
+  var heatmapLayer = null;
+  var showHeatmap = false;
+  var mapInstance = null;
+  var propertiesData = [];
+
+  // Escape HTML to prevent XSS
+  function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Create popup HTML content
+  function createPopupContent(prop) {
+    var name = prop.title || prop.displayName || prop.address;
+    var location = prop.neighborhood
+      ? prop.neighborhood + ', ' + prop.city
+      : prop.city;
+
+    var starsCount = Math.round(prop.avgRating || 0);
+    var stars = prop.ratingCount > 0
+      ? Array(starsCount + 1).join('★') + Array(6 - starsCount).join('☆')
+      : 'No ratings yet';
+
+    var ratingText = prop.ratingCount > 0
+      ? ' ' + prop.avgRating.toFixed(1) + ' (' + prop.ratingCount + ')'
+      : '';
+
+    var photoHtml = prop.primaryPhoto
+      ? '<img src="' + prop.primaryPhoto + '" alt="' + escapeHtml(name) + '" />'
+      : '<div style="width:100%;height:80px;background:#334155;border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;">No photo</div>';
+
+    var timesHtml = prop.bestTimes
+      ? '<div style="font-size:0.75rem;color:#94a3b8;margin-bottom:8px;">' + escapeHtml(prop.bestTimes) + '</div>'
+      : '';
+
+    return '<div class="property-popup">' +
+      photoHtml +
+      '<h3>' + escapeHtml(name) + '</h3>' +
+      '<div class="address">' + escapeHtml(location) + '</div>' +
+      '<div class="rating">' + stars + ratingText + '</div>' +
+      timesHtml +
+      '<a href="/properties/' + prop.id + '" class="view-link">View Details</a>' +
+    '</div>';
+  }
+
+  // Add markers to a layer group
+  function addMarkers(map, properties) {
+    markersLayer = L.layerGroup();
+
+    properties.forEach(function(prop) {
+      var isTopRated = prop.avgRating >= 4.5 && prop.ratingCount >= 3;
+      var markerColor = prop.featured ? '#ef4444' : (isTopRated ? '#22c55e' : '#f59e0b');
+      var emoji = prop.featured ? '⭐' : (isTopRated ? '🏆' : '🎄');
+
+      var icon = L.divIcon({
+        className: 'custom-marker',
+        html: '<div style="background:' + markerColor + ';width:32px;height:32px;border-radius:50%;border:3px solid white;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">' + emoji + '</div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
+      });
+
+      var marker = L.marker([prop.lat, prop.lng], { icon: icon });
+      marker.bindPopup(createPopupContent(prop), { maxWidth: 300 });
+      markersLayer.addLayer(marker);
+    });
+
+    markersLayer.addTo(map);
+  }
+
+  // Create heatmap layer
+  function createHeatmap(map, properties) {
+    // Check if L.heatLayer is available
+    if (typeof L.heatLayer !== 'function') {
+      console.warn('PropertyMap: L.heatLayer not available - heatmap disabled');
+      // Hide the toggle button if heatmap isn't available
+      var btn = document.getElementById('heatmap-toggle');
+      if (btn) btn.style.display = 'none';
+      return;
+    }
+
+    var heatData = properties.map(function(prop) {
+      // Weight by rating (higher rated = more intense)
+      var intensity = prop.avgRating ? (prop.avgRating / 5) : 0.5;
+      return [prop.lat, prop.lng, intensity];
+    });
+
+    console.log('PropertyMap: Creating heatmap with', heatData.length, 'points');
+
+    heatmapLayer = L.heatLayer(heatData, {
+      radius: 35,
+      blur: 25,
+      maxZoom: 17,
+      max: 1.0,
+      minOpacity: 0.4,
+      gradient: {
+        0.2: '#3b82f6',  // blue
+        0.4: '#22c55e',  // green
+        0.6: '#eab308',  // yellow
+        0.8: '#f97316',  // orange
+        1.0: '#ef4444'   // red
+      }
+    });
+
+    console.log('PropertyMap: Heatmap layer created');
+  }
+
+  // Toggle between markers and heatmap
+  function toggleHeatmap() {
+    // Don't toggle if heatmap isn't available
+    if (!heatmapLayer) {
+      console.warn('PropertyMap: Heatmap not available');
+      return;
+    }
+
+    var toggleBtn = document.getElementById('heatmap-toggle');
+    var icon = document.getElementById('heatmap-icon');
+    var label = document.getElementById('heatmap-label');
+
+    showHeatmap = !showHeatmap;
+    console.log('PropertyMap: Toggle heatmap, showHeatmap =', showHeatmap);
+
+    if (showHeatmap) {
+      if (markersLayer) mapInstance.removeLayer(markersLayer);
+      heatmapLayer.addTo(mapInstance);
+      if (icon) icon.textContent = '📍';
+      if (label) label.textContent = 'Markers';
+      if (toggleBtn) toggleBtn.classList.add('bg-amber-600');
+      console.log('PropertyMap: Showing heatmap');
+    } else {
+      mapInstance.removeLayer(heatmapLayer);
+      if (markersLayer) markersLayer.addTo(mapInstance);
+      if (icon) icon.textContent = '🔥';
+      if (label) label.textContent = 'Heatmap';
+      if (toggleBtn) toggleBtn.classList.remove('bg-amber-600');
+      console.log('PropertyMap: Showing markers');
+    }
+  }
+
+  // Initialize the map
+  function initMap() {
+    var container = document.getElementById('property-map');
+    var loading = document.getElementById('map-loading');
+
+    if (!container) {
+      console.error('PropertyMap: Container not found');
+      return;
+    }
+
+    // Check if Leaflet is loaded
+    if (typeof L === 'undefined') {
+      console.error('PropertyMap: Leaflet not loaded, retrying...');
+      setTimeout(initMap, 100);
+      return;
+    }
+
+    // Check if map already initialized (prevent double init)
+    if (container._leaflet_id) {
+      console.log('PropertyMap: Already initialized');
+      return;
+    }
+
+    console.log('PropertyMap: Initializing...');
+
+    try {
+      // Birmingham, AL coordinates
+      var birminghamCenter = [33.5186, -86.8104];
+      var defaultZoom = 11;
+
+      // Create map with smooth zoom options
+      var map = L.map(container, {
+        center: birminghamCenter,
+        zoom: defaultZoom,
+        // Fast + smooth zoom for trackpad
+        zoomSnap: 0,
+        wheelPxPerZoomLevel: 30,  // Less movement = faster zoom
+        zoomAnimation: true,
+        fadeAnimation: true
+      });
+
+      // Add OpenStreetMap tiles
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19
+      }).addTo(map);
+
+      // Hide loading overlay
+      if (loading) {
+        loading.style.display = 'none';
+      }
+
+      console.log('PropertyMap: Map created successfully');
+
+      // Force size recalculation
+      setTimeout(function() {
+        map.invalidateSize();
+        console.log('PropertyMap: Size invalidated');
+      }, 100);
+
+      // Store map instance for toggle
+      mapInstance = map;
+
+      // Wire up heatmap toggle button
+      var toggleBtn = document.getElementById('heatmap-toggle');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', toggleHeatmap);
+      }
+
+      // Fetch properties (pass through current URL params for filtering)
+      var apiUrl = '/api/properties' + window.location.search;
+      fetch(apiUrl)
+        .then(function(response) {
+          if (!response.ok) throw new Error('API error: ' + response.status);
+          return response.json();
+        })
+        .then(function(data) {
+          console.log('PropertyMap: Loaded ' + data.count + ' properties');
+          propertiesData = data.properties || [];
+
+          if (propertiesData.length > 0) {
+            addMarkers(map, propertiesData);
+            createHeatmap(map, propertiesData);
+          }
+
+          // Update display count if element exists
+          var countEl = document.getElementById('display-count');
+          if (countEl) {
+            countEl.textContent = String(data.count);
+          }
+        })
+        .catch(function(err) {
+          console.error('PropertyMap: Failed to load properties:', err);
+        });
+
+    } catch (err) {
+      console.error('PropertyMap: Initialization error:', err);
+      if (loading) {
+        loading.innerHTML = '<span style="color: #f87171;">Failed to load map: ' + err.message + '</span>';
+      }
+    }
+  }
+
+  // Run when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMap);
+  } else {
+    // DOM already ready, init immediately
+    initMap();
+  }
+})();
+</script>

@@ -1,0 +1,122 @@
+---
+/**
+ * Tours Page - "/tours"
+ *
+ * Shows featured/curated tours only. Regular user tours are share-link-only.
+ */
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { db, tours, tourStops } from '../../lib/db';
+import { eq, desc, and } from 'drizzle-orm';
+
+// Get featured tours only
+const featuredTours = await db
+  .select({
+    id: tours.id,
+    slug: tours.slug,
+    name: tours.name,
+    description: tours.description,
+    creatorName: tours.creatorName,
+    viewCount: tours.viewCount,
+    createdAt: tours.createdAt,
+  })
+  .from(tours)
+  .where(and(eq(tours.isPublic, true), eq(tours.isFeatured, true)))
+  .orderBy(desc(tours.viewCount));
+
+// Get stop counts
+const featuredWithCounts = await Promise.all(
+  featuredTours.map(async (tour) => {
+    const stops = await db
+      .select({ id: tourStops.id })
+      .from(tourStops)
+      .where(eq(tourStops.tourId, tour.id));
+    return { ...tour, stopCount: stops.length };
+  })
+);
+---
+
+<BaseLayout title="Tours | Light the Ham!">
+  <section class="py-8">
+    <div class="mx-auto max-w-4xl px-4">
+      <!-- Header -->
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold mb-2">Christmas Light Tours</h1>
+        <p class="text-slate-400 mb-6">
+          Curated driving routes to see the best displays in Greater Birmingham
+        </p>
+        <a
+          href="/tours/new"
+          class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold py-2 px-6 rounded-lg transition-colors"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          Create Your Own Tour
+        </a>
+      </div>
+
+      {featuredWithCounts.length === 0 ? (
+        <!-- Empty state when no featured tours -->
+        <div class="text-center py-12 bg-slate-800 rounded-lg">
+          <div class="text-4xl mb-4">🗺️</div>
+          <h2 class="text-xl font-semibold mb-2">Featured Tours Coming Soon</h2>
+          <p class="text-slate-400 mb-6 max-w-md mx-auto">
+            We're curating the best community tours. In the meantime, create your own tour and share it with friends and family!
+          </p>
+          <a
+            href="/tours/new"
+            class="text-amber-400 hover:text-amber-300 font-medium"
+          >
+            Create a Tour →
+          </a>
+        </div>
+      ) : (
+        <!-- Featured Tours Grid -->
+        <div>
+          <h2 class="text-lg font-semibold mb-4 flex items-center gap-2 text-slate-300">
+            <span class="text-amber-400">★</span>
+            Staff Picks
+          </h2>
+          <div class="grid gap-4">
+            {featuredWithCounts.map((tour) => (
+              <a
+                href={`/tours/${tour.slug}`}
+                class="block bg-gradient-to-r from-amber-500/10 to-slate-800 border border-amber-500/20 rounded-lg p-5 hover:border-amber-500/40 transition-colors"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex-1">
+                    <h3 class="text-lg font-semibold text-white mb-1">{tour.name}</h3>
+                    {tour.description && (
+                      <p class="text-slate-400 text-sm mb-2 line-clamp-2">{tour.description}</p>
+                    )}
+                    <p class="text-sm text-slate-500">
+                      by {tour.creatorName || 'Anonymous'} · {tour.stopCount} stops · {tour.viewCount || 0} views
+                    </p>
+                  </div>
+                  <div class="text-amber-500 shrink-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+
+          <!-- CTA to create own -->
+          <div class="mt-8 text-center py-6 border-t border-slate-700">
+            <p class="text-slate-400 mb-3">Want to share your favorite route?</p>
+            <a
+              href="/tours/new"
+              class="text-amber-400 hover:text-amber-300 font-medium"
+            >
+              Create Your Own Tour →
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  </section>
+</BaseLayout>

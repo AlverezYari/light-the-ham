@@ -1,0 +1,819 @@
+---
+/**
+ * Property Detail Page - "/properties/[id]"
+ *
+ * Shows full details for a single property including:
+ * - Photos gallery
+ * - Description and viewing times
+ * - Feature tags
+ * - Rating display
+ * - Get directions link
+ */
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { db, properties, propertyPhotos, propertyFeatures, featureTags, contributions } from '../../lib/db';
+import { eq, and, isNotNull } from 'drizzle-orm';
+import { validateSession, getSessionFromCookies } from '../../lib/auth';
+
+// Check if user is logged in
+const cookieHeader = Astro.request.headers.get('cookie');
+const sessionToken = getSessionFromCookies(cookieHeader);
+const session = sessionToken ? await validateSession(sessionToken) : null;
+const user = session?.user || null;
+
+// Get the property ID from the URL
+const { id } = Astro.params;
+
+if (!id) {
+  return Astro.redirect('/map');
+}
+
+// Fetch property with photos and features
+const property = await db
+  .select()
+  .from(properties)
+  .where(eq(properties.id, id))
+  .limit(1);
+
+if (property.length === 0) {
+  return Astro.redirect('/map?error=not-found');
+}
+
+const prop = property[0];
+
+// Only show approved properties (or pending to owner - future feature)
+if (prop.status !== 'approved' && prop.status !== 'pending') {
+  return Astro.redirect('/map?error=not-available');
+}
+
+// Fetch approved photos
+const photos = await db
+  .select()
+  .from(propertyPhotos)
+  .where(
+    and(
+      eq(propertyPhotos.propertyId, id),
+      eq(propertyPhotos.status, 'approved')
+    )
+  )
+  .orderBy(propertyPhotos.sortOrder);
+
+// Fetch features with tag details
+const features = await db
+  .select({
+    id: featureTags.id,
+    name: featureTags.name,
+    slug: featureTags.slug,
+    icon: featureTags.icon,
+    category: featureTags.category,
+  })
+  .from(propertyFeatures)
+  .innerJoin(featureTags, eq(propertyFeatures.featureId, featureTags.id))
+  .where(eq(propertyFeatures.propertyId, id));
+
+// Fetch approved tips
+const approvedTips = await db
+  .select({
+    id: contributions.id,
+    tip: contributions.tip,
+    createdAt: contributions.createdAt,
+  })
+  .from(contributions)
+  .where(
+    and(
+      eq(contributions.propertyId, id),
+      eq(contributions.status, 'approved'),
+      isNotNull(contributions.tip)
+    )
+  )
+  .orderBy(contributions.createdAt);
+
+// Get user's existing tip for this property (if logged in)
+let userTip: string | null = null;
+let userIsOwner = false;
+let userHasPendingClaim = false;
+
+if (user) {
+  const existingTip = await db
+    .select({ tip: contributions.tip })
+    .from(contributions)
+    .where(
+      and(
+        eq(contributions.propertyId, id),
+        eq(contributions.userId, user.id),
+        isNotNull(contributions.tip)
+      )
+    )
+    .limit(1);
+  userTip = existingTip[0]?.tip || null;
+
+  // Check if user owns this property
+  userIsOwner = prop.ownerId === user.id;
+
+  // Check if user has a pending/disputed claim
+  if (!userIsOwner) {
+    const { propertyClaims } = await import('../../lib/db');
+    const [pendingClaim] = await db
+      .select()
+      .from(propertyClaims)
+      .where(
+        and(
+          eq(propertyClaims.propertyId, id),
+          eq(propertyClaims.userId, user.id)
+        )
+      )
+      .limit(1);
+    userHasPendingClaim = pendingClaim?.status === 'pending' || pendingClaim?.status === 'disputed';
+  }
+}
+
+// Check if property has an owner (for showing claim vs dispute)
+const hasOwner = !!prop.ownerId;
+
+// Build page title
+// Priority: displayName > "Neighborhood Lights" > address
+const pageTitle = prop.displayName
+  || (prop.neighborhood ? `${prop.neighborhood} Lights` : null)
+  || prop.address;
+
+// Build Google Maps directions URL
+const mapsQuery = encodeURIComponent(`${prop.address}, ${prop.city}, ${prop.state} ${prop.zip}`);
+const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${mapsQuery}`;
+
+// Feature icon map
+const iconMap: Record<string, string> = {
+  'music': '🎵',
+  'walk': '🚶',
+  'car': '🚗',
+  'gift': '🎅',
+  'sparkles': '✨',
+  'projector': '🎬',
+  'child': '👨‍👩‍👧',
+  'coffee': '☕',
+  'heart': '❤️',
+  'trophy': '🏆',
+  'star': '⭐',
+  'flame': '🔥',
+  'balloon': '🎈',
+  'church': '⛪',
+  'snowflake': '❄️',
+};
+---
+
+<BaseLayout title={`${pageTitle} | Light the Ham!`}>
+  <div class="mx-auto max-w-4xl px-4 py-8">
+    <!-- Back link -->
+    <a href="/map" class="inline-flex items-center text-slate-400 hover:text-amber-400 mb-6">
+      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+      Back to Map
+    </a>
+
+    <!-- Photo Gallery -->
+    <div class="mb-8">
+      {photos.length > 0 ? (
+        <div class="grid gap-4">
+          <!-- Primary photo (large) -->
+          <div class="aspect-video rounded-lg overflow-hidden bg-slate-800">
+            <img
+              id="main-photo"
+              src={photos[0].url}
+              alt={pageTitle}
+              class="w-full h-full object-cover"
+            />
+          </div>
+
+          <!-- Thumbnail strip (if multiple photos) -->
+          {photos.length > 1 && (
+            <div class="flex gap-2 overflow-x-auto pb-2">
+              {photos.map((photo, index) => (
+                <button
+                  class="flex-shrink-0 w-20 h-20 rounded overflow-hidden bg-slate-800 border-2 border-transparent hover:border-amber-500 focus:border-amber-500 transition-colors photo-thumb"
+                  data-src={photo.url}
+                  data-index={index}
+                >
+                  <img src={photo.url} alt="" class="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div class="aspect-video rounded-lg bg-slate-800 flex items-center justify-center text-slate-500">
+          <span>No photos yet</span>
+        </div>
+      )}
+    </div>
+
+    <!-- Status Bar (under image): Rate, Directions, Time, Share -->
+    <div class="bg-slate-800 rounded-lg p-4 mb-8" id="rate-section" data-property-id={id}>
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- Rate Button with Popup -->
+        <div class="relative">
+          <button
+            id="rate-trigger"
+            class="bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+          >
+            <span>🔥</span>
+            <span>Rate</span>
+          </button>
+          <!-- Rating Popup -->
+          <div
+            id="rate-popup"
+            class="absolute bottom-full left-0 mb-2 bg-slate-900 border border-slate-600 rounded-lg p-3 shadow-xl hidden z-20"
+          >
+            <div class="flex text-2xl gap-1" id="rate-torches">
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  type="button"
+                  class="torch-rate-btn hover:scale-125 transition-all opacity-30 hover:opacity-100"
+                  data-value={value}
+                >
+                  🔥
+                </button>
+              ))}
+            </div>
+            <span id="rate-feedback" class="text-slate-400 text-xs block mt-1 text-center"></span>
+          </div>
+        </div>
+
+        <!-- Get Directions Button -->
+        <a
+          href={directionsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold py-2 px-4 rounded-lg transition-colors"
+        >
+          Get Directions
+        </a>
+
+        <!-- Best Times Container -->
+        {prop.bestTimes && (
+          <div class="bg-slate-700 py-2 px-4 rounded-lg flex items-center gap-2">
+            <span>🕐</span>
+            <span class="text-slate-400 text-sm">Best Time:</span>
+            <span class="text-white text-sm">{prop.bestTimes} CST</span>
+          </div>
+        )}
+
+        <!-- Parking Notes Container -->
+        {prop.parkingNotes && (
+          <div class="bg-slate-700 py-2 px-4 rounded-lg flex items-center gap-2">
+            <span>🅿️</span>
+            <span class="text-white text-sm">{prop.parkingNotes}</span>
+          </div>
+        )}
+
+        <!-- Spacer - pushes Share right on desktop -->
+        <div class="hidden md:block md:flex-1"></div>
+
+        <!-- Share button -->
+        <button
+          id="share-btn"
+          class="bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+        >
+          Share
+        </button>
+      </div>
+    </div>
+
+    <!-- Property Info Row -->
+    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-8 mb-8">
+      <!-- Left: Title, Rating, Address, Location -->
+      <div class="flex-1">
+        <!-- Title and status -->
+        <div class="mb-2">
+          {prop.featured && (
+            <span class="inline-block bg-red-500 text-white text-xs font-bold px-2 py-1 rounded mb-2">
+              FEATURED
+            </span>
+          )}
+          <h1 class="text-3xl font-bold">{pageTitle}</h1>
+        </div>
+
+        <!-- Rating Display -->
+        <div class="flex items-center gap-3 mb-2">
+          <div class="flex text-xl" id="rating-display">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <span class={`${(prop.avgRating || 0) >= star ? 'opacity-100' : (prop.avgRating || 0) >= star - 0.5 ? 'opacity-50' : 'opacity-30'}`}>
+                🔥
+              </span>
+            ))}
+          </div>
+          {(prop.ratingCount || 0) > 0 ? (
+            <span class="text-slate-400 text-sm">
+              {(prop.avgRating || 0).toFixed(1)} ({prop.ratingCount} {prop.ratingCount === 1 ? 'rating' : 'ratings'})
+            </span>
+          ) : (
+            <span class="text-slate-500 text-sm">No ratings yet</span>
+          )}
+        </div>
+
+        <!-- Address -->
+        {prop.displayName && (
+          <p class="text-slate-400 text-sm">{prop.address}</p>
+        )}
+
+        <!-- Location -->
+        <div class="flex items-center gap-1 text-slate-400 text-sm">
+          <span>📍</span>
+          <span>{prop.neighborhood ? `${prop.neighborhood}, ${prop.city}` : prop.city}</span>
+        </div>
+      </div>
+
+      <!-- Right: About This Display (tacked right on desktop, below on mobile) -->
+      {prop.description && (
+        <div class="bg-slate-800 rounded-lg p-4 w-full md:max-w-sm md:flex-shrink-0">
+          <h2 class="text-sm font-semibold mb-2 text-slate-400">About</h2>
+          <p class="text-slate-300 text-sm leading-relaxed">{prop.description}</p>
+        </div>
+      )}
+    </div>
+
+    <!-- Features -->
+    {features.length > 0 && (
+      <div class="mb-8">
+        <h2 class="text-lg font-semibold mb-3">Features</h2>
+        <div class="flex flex-wrap gap-2">
+          {features.map((feature) => (
+            <span class="inline-flex items-center gap-1 bg-slate-700 px-3 py-1.5 rounded-full text-sm">
+              <span>{iconMap[feature.icon || ''] || '✨'}</span>
+              <span>{feature.name}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- Visitor Tips -->
+    {approvedTips.length > 0 && (
+      <div class="mb-8">
+        <h2 class="text-lg font-semibold mb-3">Visitor Tips</h2>
+        <div class="space-y-2">
+          {approvedTips.map((tip) => (
+            <div class="bg-slate-800 rounded-lg p-3 text-sm">
+              <span class="text-slate-300">{tip.tip}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <!-- Contribute Section -->
+    <div class="border-t border-slate-700 pt-8" id="contribute-section" data-property-id={id}>
+      <h2 class="text-lg font-semibold mb-4">Help Others Find This Display</h2>
+
+      {user ? (
+        <div class="flex flex-wrap gap-4">
+          <!-- Add Photo -->
+          <div>
+            <input
+              type="file"
+              id="photo-input"
+              accept="image/jpeg,image/png,image/webp"
+              class="hidden"
+            />
+            <button
+              id="add-photo-btn"
+              class="bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <span>📷</span>
+              <span>Add Photo</span>
+            </button>
+            <p id="photo-status" class="text-sm text-slate-400 mt-2 hidden"></p>
+          </div>
+
+          <!-- Add Tip -->
+          <div class="flex-1 min-w-[250px]">
+            <div class="flex gap-2">
+              <input
+                type="text"
+                id="tip-input"
+                placeholder={userTip ? "Edit your tip..." : "Share a tip (parking, best view, etc.)"}
+                value={userTip || ''}
+                maxlength="280"
+                class="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:border-amber-500"
+              />
+              <button
+                id="submit-tip-btn"
+                class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-medium py-2 px-4 rounded-lg transition-colors"
+              >
+                {userTip ? 'Update' : 'Submit'}
+              </button>
+            </div>
+            <p id="tip-status" class="text-sm text-slate-400 mt-2 hidden"></p>
+            <p class="text-xs text-slate-500 mt-1">280 characters max, no links</p>
+          </div>
+        </div>
+      ) : (
+        <div class="bg-slate-800 rounded-lg p-4 text-center">
+          <p class="text-slate-400 mb-3">Sign in to add photos and tips</p>
+          <a
+            href="/login"
+            class="inline-block bg-amber-500 hover:bg-amber-600 text-slate-900 font-medium py-2 px-6 rounded-lg transition-colors"
+          >
+            Sign In
+          </a>
+        </div>
+      )}
+    </div>
+
+    <!-- Claim Ownership Section -->
+    <div class="border-t border-slate-700 pt-8 mt-8" id="claim-section" data-property-id={id} data-has-owner={hasOwner ? 'true' : 'false'}>
+      <h2 class="text-lg font-semibold mb-4">Property Ownership</h2>
+
+      {userIsOwner ? (
+        <div class="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+          <div class="flex items-center gap-2 text-green-400">
+            <span>✓</span>
+            <span class="font-medium">You own this property</span>
+          </div>
+          <p class="text-sm text-slate-400 mt-2">
+            Owner features coming soon: edit details, manage photos, and more.
+          </p>
+        </div>
+      ) : userHasPendingClaim ? (
+        <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
+          <div class="flex items-center gap-2 text-amber-400">
+            <span>⏳</span>
+            <span class="font-medium">Your ownership claim is pending review</span>
+          </div>
+          <p class="text-sm text-slate-400 mt-2">
+            We'll notify you once an admin reviews your claim.
+          </p>
+        </div>
+      ) : user ? (
+        <div class="bg-slate-800 rounded-lg p-4">
+          <p class="text-slate-300 mb-4">
+            {hasOwner
+              ? "This property is already claimed. If you believe you're the actual owner, you can submit a dispute."
+              : "Do you own this property? Claim it to manage its listing."}
+          </p>
+          <button
+            id="claim-btn"
+            class={`font-medium py-2 px-6 rounded-lg transition-colors ${
+              hasOwner
+                ? 'bg-amber-500 hover:bg-amber-600 text-slate-900'
+                : 'bg-green-600 hover:bg-green-700 text-white'
+            }`}
+          >
+            {hasOwner ? 'Dispute Ownership' : 'Claim This Property'}
+          </button>
+          <p id="claim-status" class="text-sm mt-3 hidden"></p>
+          <p class="text-xs text-slate-500 mt-2">
+            Limit: 3 properties per account. 24hr cooldown between claims.
+          </p>
+        </div>
+      ) : (
+        <div class="bg-slate-800 rounded-lg p-4 text-center">
+          <p class="text-slate-400 mb-3">Sign in to claim ownership of this property</p>
+          <a
+            href="/login"
+            class="inline-block bg-amber-500 hover:bg-amber-600 text-slate-900 font-medium py-2 px-6 rounded-lg transition-colors"
+          >
+            Sign In
+          </a>
+        </div>
+      )}
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  // Photo gallery thumbnail click handler
+  const mainPhoto = document.getElementById('main-photo') as HTMLImageElement;
+  const thumbs = document.querySelectorAll('.photo-thumb');
+
+  thumbs.forEach((thumb) => {
+    thumb.addEventListener('click', () => {
+      const src = (thumb as HTMLElement).dataset.src;
+      if (src && mainPhoto) {
+        mainPhoto.src = src;
+        // Update active state
+        thumbs.forEach(t => t.classList.remove('border-amber-500'));
+        thumb.classList.add('border-amber-500');
+      }
+    });
+  });
+
+  // Set first thumb as active
+  if (thumbs.length > 0) {
+    thumbs[0].classList.add('border-amber-500');
+  }
+
+  // Share button
+  const shareBtn = document.getElementById('share-btn');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      const url = window.location.href;
+      const title = document.title;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, url });
+        } catch (err) {
+          // User cancelled or error
+        }
+      } else {
+        // Fallback: copy to clipboard
+        try {
+          await navigator.clipboard.writeText(url);
+          shareBtn.textContent = 'Link Copied!';
+          setTimeout(() => {
+            shareBtn.textContent = 'Share This Display';
+          }, 2000);
+        } catch (err) {
+          // Fallback fallback: prompt
+          prompt('Copy this link:', url);
+        }
+      }
+    });
+  }
+
+  // Rating popup functionality
+  const rateTrigger = document.getElementById('rate-trigger');
+  const ratePopup = document.getElementById('rate-popup');
+  const rateSection = document.getElementById('rate-section');
+  const rateTorches = document.getElementById('rate-torches');
+  const rateFeedback = document.getElementById('rate-feedback');
+
+  if (rateTrigger && ratePopup && rateSection && rateTorches && rateFeedback) {
+    const propertyId = rateSection.dataset.propertyId;
+    const buttons = rateTorches.querySelectorAll('.torch-rate-btn');
+    let isSubmitting = false;
+    let selectedRating = 0;
+    let popupOpen = false;
+
+    // Toggle popup on click
+    rateTrigger.addEventListener('click', () => {
+      popupOpen = !popupOpen;
+      ratePopup.classList.toggle('hidden', !popupOpen);
+      if (popupOpen) {
+        rateFeedback.textContent = 'Click a torch';
+      }
+    });
+
+    // Close popup when clicking outside
+    document.addEventListener('click', (e) => {
+      if (popupOpen && !ratePopup.contains(e.target as Node) && e.target !== rateTrigger && !rateTrigger.contains(e.target as Node)) {
+        popupOpen = false;
+        ratePopup.classList.add('hidden');
+      }
+    });
+
+    // Update torch visibility based on rating
+    function updateTorches(rating: number) {
+      buttons.forEach((btn) => {
+        const value = parseInt((btn as HTMLElement).dataset.value || '0');
+        if (value <= rating) {
+          (btn as HTMLElement).style.opacity = '1';
+        } else {
+          (btn as HTMLElement).style.opacity = '0.3';
+        }
+      });
+    }
+
+    buttons.forEach((btn) => {
+      const value = parseInt((btn as HTMLElement).dataset.value || '0');
+
+      btn.addEventListener('mouseenter', () => {
+        if (isSubmitting) return;
+        updateTorches(value);
+        rateFeedback.textContent = value + ' torch' + (value !== 1 ? 'es' : '');
+      });
+
+      btn.addEventListener('mouseleave', () => {
+        if (isSubmitting) return;
+        updateTorches(selectedRating);
+        rateFeedback.textContent = selectedRating ? 'Rated ' + selectedRating : 'Click a torch';
+      });
+
+      btn.addEventListener('click', async () => {
+        if (isSubmitting || !propertyId) return;
+
+        selectedRating = value;
+        isSubmitting = true;
+        rateFeedback.textContent = 'Submitting...';
+        updateTorches(value);
+
+        try {
+          const response = await fetch('/api/rate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ propertyId, rating: value }),
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            rateFeedback.textContent = 'Thanks!';
+            rateFeedback.classList.remove('text-slate-400');
+            rateFeedback.classList.add('text-green-400');
+            // Update button text to show rated
+            rateTrigger.innerHTML = '<span>🔥</span><span>Rated ' + value + '</span>';
+            rateTrigger.classList.remove('bg-slate-700', 'hover:bg-slate-600');
+            rateTrigger.classList.add('bg-green-700', 'hover:bg-green-600');
+            // Close popup after short delay
+            setTimeout(() => {
+              ratePopup.classList.add('hidden');
+              popupOpen = false;
+            }, 1000);
+            // Disable further clicks
+            buttons.forEach(b => {
+              (b as HTMLButtonElement).disabled = true;
+              (b as HTMLElement).classList.remove('hover:scale-125', 'hover:opacity-100');
+            });
+          } else {
+            rateFeedback.textContent = data.error || 'Failed';
+            isSubmitting = false;
+          }
+        } catch (err) {
+          rateFeedback.textContent = 'Error';
+          isSubmitting = false;
+        }
+      });
+    });
+  }
+
+  // Photo upload functionality
+  const contributeSection = document.getElementById('contribute-section');
+  const photoInput = document.getElementById('photo-input') as HTMLInputElement;
+  const addPhotoBtn = document.getElementById('add-photo-btn');
+  const photoStatus = document.getElementById('photo-status');
+
+  if (contributeSection && photoInput && addPhotoBtn && photoStatus) {
+    const propertyId = contributeSection.dataset.propertyId;
+
+    addPhotoBtn.addEventListener('click', () => {
+      photoInput.click();
+    });
+
+    photoInput.addEventListener('change', async () => {
+      const file = photoInput.files?.[0];
+      if (!file || !propertyId) return;
+
+      // Show uploading status
+      photoStatus.textContent = 'Uploading...';
+      photoStatus.classList.remove('hidden', 'text-green-400', 'text-red-400');
+      photoStatus.classList.add('text-slate-400');
+      addPhotoBtn.setAttribute('disabled', 'true');
+      addPhotoBtn.classList.add('opacity-50');
+
+      const formData = new FormData();
+      formData.append('photo', file);
+      formData.append('propertyId', propertyId);
+
+      try {
+        const response = await fetch('/api/photos/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          photoStatus.textContent = '✓ ' + data.message;
+          photoStatus.classList.remove('text-slate-400');
+          photoStatus.classList.add('text-green-400');
+        } else {
+          photoStatus.textContent = '✗ ' + (data.error || 'Upload failed');
+          photoStatus.classList.remove('text-slate-400');
+          photoStatus.classList.add('text-red-400');
+        }
+      } catch (err) {
+        photoStatus.textContent = '✗ Upload failed';
+        photoStatus.classList.remove('text-slate-400');
+        photoStatus.classList.add('text-red-400');
+      }
+
+      // Reset
+      photoInput.value = '';
+      addPhotoBtn.removeAttribute('disabled');
+      addPhotoBtn.classList.remove('opacity-50');
+    });
+  }
+
+  // Tip submission functionality
+  const tipInput = document.getElementById('tip-input') as HTMLInputElement;
+  const submitTipBtn = document.getElementById('submit-tip-btn');
+  const tipStatus = document.getElementById('tip-status');
+
+  if (contributeSection && tipInput && submitTipBtn && tipStatus) {
+    const propertyId = contributeSection.dataset.propertyId;
+
+    submitTipBtn.addEventListener('click', async () => {
+      const tip = tipInput.value.trim();
+      if (!tip || !propertyId) return;
+
+      // Show submitting status
+      tipStatus.textContent = 'Submitting...';
+      tipStatus.classList.remove('hidden', 'text-green-400', 'text-red-400');
+      tipStatus.classList.add('text-slate-400');
+      submitTipBtn.setAttribute('disabled', 'true');
+      submitTipBtn.classList.add('opacity-50');
+
+      try {
+        const response = await fetch('/api/tips/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ propertyId, tip }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          tipStatus.textContent = '✓ ' + data.message;
+          tipStatus.classList.remove('text-slate-400');
+          tipStatus.classList.add('text-green-400');
+          // Update button text if this was a new tip
+          if (!data.updated) {
+            submitTipBtn.textContent = 'Update';
+          }
+        } else {
+          tipStatus.textContent = '✗ ' + (data.error || 'Submission failed');
+          tipStatus.classList.remove('text-slate-400');
+          tipStatus.classList.add('text-red-400');
+        }
+      } catch (err) {
+        tipStatus.textContent = '✗ Submission failed';
+        tipStatus.classList.remove('text-slate-400');
+        tipStatus.classList.add('text-red-400');
+      }
+
+      submitTipBtn.removeAttribute('disabled');
+      submitTipBtn.classList.remove('opacity-50');
+    });
+
+    // Submit on Enter key
+    tipInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        submitTipBtn.click();
+      }
+    });
+  }
+
+  // Claim ownership functionality
+  const claimSection = document.getElementById('claim-section');
+  const claimBtn = document.getElementById('claim-btn');
+  const claimStatus = document.getElementById('claim-status');
+
+  if (claimSection && claimBtn && claimStatus) {
+    const propertyId = claimSection.dataset.propertyId;
+    const hasOwner = claimSection.dataset.hasOwner === 'true';
+
+    claimBtn.addEventListener('click', async () => {
+      // Confirm if disputing
+      if (hasOwner) {
+        const confirmed = confirm(
+          'This property already has an owner. Are you sure you want to dispute ownership? ' +
+          'You may be asked to provide proof of ownership.'
+        );
+        if (!confirmed) return;
+      }
+
+      claimBtn.setAttribute('disabled', 'true');
+      claimBtn.classList.add('opacity-50');
+      claimStatus.textContent = 'Submitting claim...';
+      claimStatus.classList.remove('hidden', 'text-green-400', 'text-red-400');
+      claimStatus.classList.add('text-slate-400');
+
+      try {
+        const response = await fetch('/api/claims/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ propertyId }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          claimStatus.textContent = '✓ ' + data.message;
+          claimStatus.classList.remove('text-slate-400', 'text-red-400');
+          claimStatus.classList.add('text-green-400');
+
+          // Hide the button and show success state
+          claimBtn.classList.add('hidden');
+
+          // Reload after a moment to show updated state
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } else {
+          claimStatus.textContent = '✗ ' + (data.error || 'Failed to submit claim');
+          claimStatus.classList.remove('text-slate-400', 'text-green-400');
+          claimStatus.classList.add('text-red-400');
+          claimBtn.removeAttribute('disabled');
+          claimBtn.classList.remove('opacity-50');
+        }
+      } catch (err) {
+        claimStatus.textContent = '✗ Failed to submit claim';
+        claimStatus.classList.remove('text-slate-400', 'text-green-400');
+        claimStatus.classList.add('text-red-400');
+        claimBtn.removeAttribute('disabled');
+        claimBtn.classList.remove('opacity-50');
+      }
+    });
+  }
+</script>

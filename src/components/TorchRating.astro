@@ -1,0 +1,214 @@
+---
+/**
+ * TorchRating Component
+ *
+ * Displays a rating using Vulcan torch icons (Birmingham's iconic statue).
+ * Can be display-only or interactive for submitting ratings.
+ */
+
+interface Props {
+  rating?: number;
+  count?: number;
+  interactive?: boolean;
+  propertyId?: string;
+  size?: 'sm' | 'md' | 'lg';
+}
+
+const {
+  rating = 0,
+  count = 0,
+  interactive = false,
+  propertyId = '',
+  size = 'md',
+} = Astro.props;
+
+const sizeClasses = {
+  sm: 'w-5 h-5',
+  md: 'w-7 h-7',
+  lg: 'w-9 h-9',
+};
+
+const torchSize = sizeClasses[size];
+---
+
+<div
+  class="torch-rating inline-flex items-center gap-1"
+  data-interactive={interactive ? 'true' : 'false'}
+  data-property-id={propertyId}
+  data-current-rating={rating}
+>
+  <div class="torch-container flex gap-0.5">
+    {[1, 2, 3, 4, 5].map((value) => {
+      const filled = rating >= value;
+      const half = !filled && rating >= value - 0.5;
+
+      return (
+        <button
+          type="button"
+          class:list={[
+            'torch-btn relative transition-transform',
+            torchSize,
+            interactive ? 'cursor-pointer hover:scale-110' : 'cursor-default pointer-events-none',
+          ]}
+          data-value={value}
+        >
+          {/* Empty torch (background) */}
+          <svg class="absolute inset-0 w-full h-full text-slate-600" viewBox="0 0 24 32" fill="currentColor">
+            <path d="M12 0C12 0 6 4 6 10c0 2 1 4 2 5v14a2 2 0 002 2h4a2 2 0 002-2V15c1-1 2-3 2-5 0-6-6-10-6-10z" />
+          </svg>
+
+          {/* Full torch */}
+          <svg
+            class:list={['absolute inset-0 w-full h-full transition-opacity', filled ? 'opacity-100' : 'opacity-0']}
+            data-full="true"
+            viewBox="0 0 24 32"
+          >
+            <path d="M12 0C12 0 6 4 6 10c0 2 1 4 2 5v14a2 2 0 002 2h4a2 2 0 002-2V15c1-1 2-3 2-5 0-6-6-10-6-10z" fill="#78716c" />
+            <path d="M12 2c0 0-4 3-4 7 0 2 1.5 4 4 4s4-2 4-4c0-4-4-7-4-7z" fill="#f59e0b" />
+            <path d="M12 4c0 0-2 2-2 4 0 1 1 2 2 2s2-1 2-2c0-2-2-4-2-4z" fill="#fbbf24" />
+          </svg>
+
+          {/* Half torch */}
+          <svg
+            class:list={['absolute inset-0 w-full h-full transition-opacity', half ? 'opacity-100' : 'opacity-0']}
+            data-half="true"
+            viewBox="0 0 24 32"
+          >
+            <defs>
+              <linearGradient id={`half-grad-${value}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="50%" stop-color="#78716c" />
+                <stop offset="50%" stop-color="#475569" />
+              </linearGradient>
+              <linearGradient id={`half-flame-${value}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="50%" stop-color="#f59e0b" />
+                <stop offset="50%" stop-color="transparent" />
+              </linearGradient>
+            </defs>
+            <path d="M12 0C12 0 6 4 6 10c0 2 1 4 2 5v14a2 2 0 002 2h4a2 2 0 002-2V15c1-1 2-3 2-5 0-6-6-10-6-10z" fill={`url(#half-grad-${value})`} />
+            <path d="M12 2c0 0-4 3-4 7 0 2 1.5 4 4 4s4-2 4-4c0-4-4-7-4-7z" fill={`url(#half-flame-${value})`} />
+          </svg>
+        </button>
+      );
+    })}
+  </div>
+
+  {/* Rating count display */}
+  {!interactive && count > 0 && (
+    <span class="text-slate-400 text-sm ml-2">
+      {rating.toFixed(1)} ({count})
+    </span>
+  )}
+
+  {/* Interactive feedback */}
+  {interactive && (
+    <span class="rating-feedback text-slate-400 text-sm ml-2">
+      Click to rate
+    </span>
+  )}
+</div>
+
+<style>
+  .torch-rating.rated .torch-btn {
+    pointer-events: none;
+  }
+</style>
+
+<script is:inline>
+(function() {
+  document.querySelectorAll('.torch-rating[data-interactive="true"]').forEach(function(container) {
+    if (container.dataset.initialized) return;
+    container.dataset.initialized = 'true';
+
+    var propertyId = container.dataset.propertyId;
+    var buttons = container.querySelectorAll('.torch-btn');
+    var feedback = container.querySelector('.rating-feedback');
+    var selectedRating = 0;
+    var isSubmitting = false;
+
+    function previewRating(rating) {
+      buttons.forEach(function(btn) {
+        var value = parseInt(btn.dataset.value || '0');
+        var fullSvg = btn.querySelector('svg[data-full="true"]');
+        var halfSvg = btn.querySelector('svg[data-half="true"]');
+
+        if (rating >= value) {
+          if (fullSvg) fullSvg.style.opacity = '1';
+          if (halfSvg) halfSvg.style.opacity = '0';
+        } else if (rating >= value - 0.5) {
+          if (fullSvg) fullSvg.style.opacity = '0';
+          if (halfSvg) halfSvg.style.opacity = '1';
+        } else {
+          if (fullSvg) fullSvg.style.opacity = '0';
+          if (halfSvg) halfSvg.style.opacity = '0';
+        }
+      });
+    }
+
+    buttons.forEach(function(btn) {
+      var value = parseInt(btn.dataset.value || '0');
+
+      btn.addEventListener('mouseenter', function() {
+        if (isSubmitting) return;
+        previewRating(value);
+        if (feedback) feedback.textContent = value + ' torch' + (value !== 1 ? 'es' : '');
+      });
+
+      btn.addEventListener('mouseleave', function() {
+        if (isSubmitting) return;
+        previewRating(selectedRating);
+        if (feedback) feedback.textContent = selectedRating ? 'You rated ' + selectedRating : 'Click to rate';
+      });
+
+      btn.addEventListener('mousemove', function(e) {
+        if (isSubmitting) return;
+        var rect = btn.getBoundingClientRect();
+        var isLeftHalf = e.clientX < rect.left + rect.width / 2;
+        var hoverValue = isLeftHalf ? value - 0.5 : value;
+        previewRating(hoverValue);
+        if (feedback) feedback.textContent = hoverValue + ' torch' + (hoverValue !== 1 ? 'es' : '');
+      });
+
+      btn.addEventListener('click', function(e) {
+        if (isSubmitting || !propertyId) return;
+
+        var rect = btn.getBoundingClientRect();
+        var isLeftHalf = e.clientX < rect.left + rect.width / 2;
+        var ratingValue = isLeftHalf ? value - 0.5 : value;
+
+        if (ratingValue < 0.5) return;
+
+        selectedRating = ratingValue;
+        isSubmitting = true;
+        if (feedback) feedback.textContent = 'Submitting...';
+
+        fetch('/api/rate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ propertyId: propertyId, rating: ratingValue })
+        })
+        .then(function(response) {
+          return response.json();
+        })
+        .then(function(data) {
+          if (data.success) {
+            container.classList.add('rated');
+            if (feedback) {
+              feedback.textContent = 'Thanks! You rated ' + ratingValue + ' torches';
+              feedback.classList.remove('text-slate-400');
+              feedback.classList.add('text-amber-400');
+            }
+            previewRating(ratingValue);
+          } else {
+            if (feedback) feedback.textContent = data.error || 'Failed to rate';
+            isSubmitting = false;
+          }
+        })
+        .catch(function(err) {
+          if (feedback) feedback.textContent = 'Error submitting rating';
+          isSubmitting = false;
+        });
+      });
+    });
+  });
+})();
+</script>

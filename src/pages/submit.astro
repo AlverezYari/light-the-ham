@@ -1,0 +1,793 @@
+---
+/**
+ * Property Submission Page - "/submit"
+ *
+ * Form for users to submit new Christmas light displays.
+ * Uses SSR for form handling.
+ */
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { db, featureTags } from '../lib/db';
+import { validateSession, getSessionFromCookies } from '../lib/auth';
+
+// Check if user is logged in (needed for owner claims)
+const cookieHeader = Astro.request.headers.get('cookie');
+const sessionToken = getSessionFromCookies(cookieHeader);
+const session = sessionToken ? await validateSession(sessionToken) : null;
+const user = session?.user || null;
+
+// Fetch feature tags for the form
+const tags = await db.select().from(featureTags).orderBy(featureTags.sortOrder);
+
+// Group tags by category for better UX
+const tagsByCategory = tags.reduce((acc, tag) => {
+  const category = tag.category || 'other';
+  if (!acc[category]) acc[category] = [];
+  acc[category].push(tag);
+  return acc;
+}, {} as Record<string, typeof tags>);
+
+const categoryLabels: Record<string, string> = {
+  audio: '🎵 Audio',
+  visual: '✨ Visual',
+  interactive: '🎅 Interactive',
+  access: '🚗 Access',
+  audience: '👨‍👩‍👧 Audience',
+  community: '❤️ Community',
+  style: '🎨 Style',
+  theme: '🎄 Theme',
+  recognition: '🏆 Recognition',
+  other: '📌 Other',
+};
+---
+
+<BaseLayout title="Submit a Display | Light the Ham!">
+  <section class="py-12">
+    <div class="mx-auto max-w-2xl px-4">
+      <h1 class="text-3xl font-bold mb-2">Submit a Display</h1>
+      <p class="text-slate-400 mb-8">
+        Know a great Christmas light display in the Greater Birmingham area? Add it to our map!
+      </p>
+
+      <!-- Success Message -->
+      <div id="success-message" class="hidden">
+        <div class="bg-green-500/20 border border-green-500 rounded-xl p-8 text-center">
+          <div class="text-6xl mb-4">🎄</div>
+          <h2 class="text-2xl font-bold text-green-300 mb-2">Thanks for submitting!</h2>
+          <p class="text-slate-300 mb-6">
+            Your display has been added and is pending review.
+            We'll have it on the map soon!
+          </p>
+          <div class="flex gap-4 justify-center">
+            <a href="/" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold py-2 px-6 rounded-lg transition-colors">
+              View Map
+            </a>
+            <a href="/submit" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
+              Submit Another
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Message -->
+      <div id="error-message" class="hidden bg-red-500/20 border border-red-500 text-red-300 p-4 rounded-lg mb-6">
+        <strong>Error:</strong> <span id="error-text"></span>
+      </div>
+
+      <!-- Progress Indicator (hidden by default) -->
+      <div id="progress-container" class="hidden mb-6">
+        <div class="bg-slate-800 border border-slate-600 rounded-lg p-4">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="animate-spin h-5 w-5 border-2 border-amber-500 border-t-transparent rounded-full"></div>
+            <span id="progress-status" class="text-slate-300">Preparing submission...</span>
+          </div>
+          <div class="w-full bg-slate-700 rounded-full h-2">
+            <div id="progress-bar" class="bg-amber-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+          <div id="progress-detail" class="text-xs text-slate-500 mt-2"></div>
+        </div>
+      </div>
+
+      <!-- Submission Form -->
+      <form id="submit-form" class="space-y-6" data-user-id={user?.id || ''} data-logged-in={user ? 'true' : 'false'}>
+        <!-- Address Section -->
+        <fieldset class="space-y-4">
+          <legend class="text-lg font-semibold text-amber-400 mb-2">📍 Location</legend>
+
+          <div class="relative">
+            <label for="address" class="block text-sm font-medium mb-1">
+              Street Address <span class="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              id="address"
+              name="address"
+              required
+              autocomplete="off"
+              placeholder="Start typing address..."
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none"
+            />
+            <div id="address-suggestions" class="absolute z-50 w-full bg-slate-800 border border-slate-600 rounded-lg mt-1 hidden max-h-48 overflow-y-auto"></div>
+          </div>
+
+          <div>
+            <label for="unit" class="block text-sm font-medium mb-1">
+              Apt / Suite / Unit (optional)
+            </label>
+            <input
+              type="text"
+              id="unit"
+              name="unit"
+              placeholder="e.g., Apt 4B, Suite 100, Unit 12"
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label for="city" class="block text-sm font-medium mb-1">
+                City <span class="text-red-400">*</span>
+              </label>
+              <select
+                id="city"
+                name="city"
+                required
+                class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none"
+              >
+                <optgroup label="Jefferson County">
+                  <option value="Birmingham" selected>Birmingham</option>
+                  <option value="Bessemer">Bessemer</option>
+                  <option value="Center Point">Center Point</option>
+                  <option value="Clay">Clay</option>
+                  <option value="Fairfield">Fairfield</option>
+                  <option value="Fultondale">Fultondale</option>
+                  <option value="Gardendale">Gardendale</option>
+                  <option value="Homewood">Homewood</option>
+                  <option value="Hoover">Hoover</option>
+                  <option value="Hueytown">Hueytown</option>
+                  <option value="Irondale">Irondale</option>
+                  <option value="Leeds">Leeds</option>
+                  <option value="Midfield">Midfield</option>
+                  <option value="Mountain Brook">Mountain Brook</option>
+                  <option value="Pleasant Grove">Pleasant Grove</option>
+                  <option value="Tarrant">Tarrant</option>
+                  <option value="Trussville">Trussville</option>
+                  <option value="Vestavia Hills">Vestavia Hills</option>
+                </optgroup>
+                <optgroup label="Shelby County">
+                  <option value="Alabaster">Alabaster</option>
+                  <option value="Calera">Calera</option>
+                  <option value="Chelsea">Chelsea</option>
+                  <option value="Columbiana">Columbiana</option>
+                  <option value="Helena">Helena</option>
+                  <option value="Montevallo">Montevallo</option>
+                  <option value="Pelham">Pelham</option>
+                </optgroup>
+                <optgroup label="St. Clair County">
+                  <option value="Ashville">Ashville</option>
+                  <option value="Moody">Moody</option>
+                  <option value="Pell City">Pell City</option>
+                  <option value="Springville">Springville</option>
+                </optgroup>
+                <optgroup label="Blount County">
+                  <option value="Oneonta">Oneonta</option>
+                  <option value="Warrior">Warrior</option>
+                </optgroup>
+                <optgroup label="Walker County">
+                  <option value="Jasper">Jasper</option>
+                </optgroup>
+                <optgroup label="Chilton County">
+                  <option value="Clanton">Clanton</option>
+                  <option value="Jemison">Jemison</option>
+                </optgroup>
+                <optgroup label="Bibb County">
+                  <option value="Centreville">Centreville</option>
+                </optgroup>
+                <option value="Other">Other (specify in neighborhood)</option>
+              </select>
+            </div>
+            <div>
+              <label for="zip" class="block text-sm font-medium mb-1">
+                ZIP Code <span class="text-red-400">*</span>
+              </label>
+              <select
+                id="zip"
+                name="zip"
+                required
+                class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none"
+              >
+                <option value="">-- Select --</option>
+                <optgroup label="Birmingham">
+                  <option value="35201">35201</option>
+                  <option value="35203">35203</option>
+                  <option value="35204">35204</option>
+                  <option value="35205">35205</option>
+                  <option value="35206">35206</option>
+                  <option value="35207">35207</option>
+                  <option value="35208">35208</option>
+                  <option value="35209">35209</option>
+                  <option value="35210">35210</option>
+                  <option value="35211">35211</option>
+                  <option value="35212">35212</option>
+                  <option value="35213">35213</option>
+                  <option value="35214">35214</option>
+                  <option value="35215">35215</option>
+                  <option value="35216">35216</option>
+                  <option value="35217">35217</option>
+                  <option value="35218">35218</option>
+                  <option value="35221">35221</option>
+                  <option value="35222">35222</option>
+                  <option value="35223">35223</option>
+                  <option value="35224">35224</option>
+                  <option value="35226">35226</option>
+                  <option value="35228">35228</option>
+                  <option value="35229">35229</option>
+                  <option value="35233">35233</option>
+                  <option value="35234">35234</option>
+                  <option value="35235">35235</option>
+                  <option value="35242">35242</option>
+                  <option value="35243">35243</option>
+                  <option value="35244">35244</option>
+                </optgroup>
+                <optgroup label="Jefferson County Suburbs">
+                  <option value="35022">35022 - Bessemer</option>
+                  <option value="35023">35023 - Bessemer</option>
+                  <option value="35068">35068 - Fultondale</option>
+                  <option value="35071">35071 - Gardendale</option>
+                  <option value="35094">35094 - Leeds</option>
+                  <option value="35111">35111 - Hueytown</option>
+                  <option value="35173">35173 - Trussville</option>
+                  <option value="35126">35126 - Pinson</option>
+                  <option value="35127">35127 - Pleasant Grove</option>
+                  <option value="35117">35117 - Graysville</option>
+                  <option value="35064">35064 - Fairfield</option>
+                  <option value="35228">35228 - Midfield</option>
+                </optgroup>
+                <optgroup label="Shelby County">
+                  <option value="35007">35007 - Alabaster</option>
+                  <option value="35040">35040 - Chelsea</option>
+                  <option value="35051">35051 - Columbiana</option>
+                  <option value="35080">35080 - Helena</option>
+                  <option value="35115">35115 - Montevallo</option>
+                  <option value="35124">35124 - Pelham</option>
+                  <option value="35040">35040 - Calera</option>
+                </optgroup>
+                <optgroup label="St. Clair County">
+                  <option value="35125">35125 - Pell City</option>
+                  <option value="35128">35128 - Pell City</option>
+                  <option value="35146">35146 - Springville</option>
+                  <option value="35953">35953 - Ashville</option>
+                  <option value="35004">35004 - Moody</option>
+                </optgroup>
+                <optgroup label="Blount County">
+                  <option value="35121">35121 - Oneonta</option>
+                  <option value="35180">35180 - Warrior</option>
+                </optgroup>
+                <optgroup label="Walker County">
+                  <option value="35501">35501 - Jasper</option>
+                  <option value="35503">35503 - Jasper</option>
+                  <option value="35504">35504 - Jasper</option>
+                </optgroup>
+                <optgroup label="Chilton County">
+                  <option value="35045">35045 - Clanton</option>
+                  <option value="35046">35046 - Clanton</option>
+                  <option value="35085">35085 - Jemison</option>
+                </optgroup>
+                <optgroup label="Bibb County">
+                  <option value="35042">35042 - Centreville</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="neighborhood" class="block text-sm font-medium mb-1">
+              Neighborhood (optional)
+            </label>
+            <input
+              type="text"
+              id="neighborhood"
+              name="neighborhood"
+              placeholder="e.g., Highland Park, Vestavia, Mountain Brook"
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none"
+            />
+          </div>
+        </fieldset>
+
+        <!-- Display Info Section -->
+        <fieldset class="space-y-4">
+          <legend class="text-lg font-semibold text-amber-400 mb-2">🎄 Display Info</legend>
+
+          <div>
+            <label for="displayName" class="block text-sm font-medium mb-1">
+              Display Name (optional)
+            </label>
+            <input
+              type="text"
+              id="displayName"
+              name="displayName"
+              placeholder="e.g., The Johnson Family Light Show"
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none"
+            />
+            <p class="text-xs text-slate-500 mt-1">Give this display a creative name</p>
+          </div>
+
+          <div>
+            <label for="description" class="block text-sm font-medium mb-1">
+              Description (optional)
+            </label>
+            <textarea
+              id="description"
+              name="description"
+              rows="3"
+              placeholder="Tell us about this display... What makes it special?"
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none resize-none"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium mb-2">
+              Best Viewing Times (optional)
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Lights on</label>
+                <select
+                  id="lightsOn"
+                  name="lightsOn"
+                  class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="">-- Select --</option>
+                  <option value="dusk">Dusk</option>
+                  <option value="5:00 PM">5:00 PM</option>
+                  <option value="5:30 PM">5:30 PM</option>
+                  <option value="6:00 PM" selected>6:00 PM</option>
+                  <option value="6:30 PM">6:30 PM</option>
+                  <option value="7:00 PM">7:00 PM</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-400 mb-1">Lights off</label>
+                <select
+                  id="lightsOff"
+                  name="lightsOff"
+                  class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="">-- Select --</option>
+                  <option value="9:00 PM">9:00 PM</option>
+                  <option value="9:30 PM">9:30 PM</option>
+                  <option value="10:00 PM" selected>10:00 PM</option>
+                  <option value="10:30 PM">10:30 PM</option>
+                  <option value="11:00 PM">11:00 PM</option>
+                  <option value="midnight">Midnight</option>
+                  <option value="all night">All Night</option>
+                </select>
+              </div>
+            </div>
+            <div class="mt-2">
+              <label class="block text-xs text-slate-400 mb-1">Schedule</label>
+              <select
+                id="schedule"
+                name="schedule"
+                class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 focus:border-amber-500 focus:outline-none"
+              >
+                <option value="nightly" selected>Every night</option>
+                <option value="weekends">Weekends only</option>
+                <option value="fri-sun">Fri-Sun</option>
+                <option value="varies">Varies (check ahead)</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Feature Tags Section -->
+        <fieldset class="space-y-4">
+          <legend class="text-lg font-semibold text-amber-400 mb-2">✨ Features</legend>
+          <p class="text-sm text-slate-400 -mt-2 mb-3">Select all that apply</p>
+
+          <div class="grid grid-cols-2 gap-4">
+            {Object.entries(tagsByCategory).map(([category, categoryTags]) => (
+              <div class="space-y-2">
+                <h4 class="text-sm font-medium text-slate-300">
+                  {categoryLabels[category] || category}
+                </h4>
+                {categoryTags.map((tag) => (
+                  <label class="flex items-center gap-2 text-sm cursor-pointer hover:text-amber-300">
+                    <input
+                      type="checkbox"
+                      name="features"
+                      value={tag.id}
+                      class="rounded border-slate-600 bg-slate-800 text-amber-500 focus:ring-amber-500"
+                    />
+                    {tag.name}
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
+        </fieldset>
+
+        <!-- Photo Upload Section -->
+        <fieldset class="space-y-4">
+          <legend class="text-lg font-semibold text-amber-400 mb-2">📸 Photos</legend>
+
+          <div>
+            <label for="photos" class="block text-sm font-medium mb-1">
+              Upload Photos <span class="text-red-400">*</span>
+            </label>
+            <input
+              type="file"
+              id="photos"
+              name="photos"
+              accept="image/*"
+              multiple
+              required
+              class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:border-amber-500 focus:outline-none file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-amber-500 file:text-slate-900 file:font-medium file:cursor-pointer"
+            />
+            <p class="text-xs text-slate-500 mt-1">Upload 1-5 photos (max 10MB each)</p>
+          </div>
+
+          <!-- Photo Preview -->
+          <div id="photo-preview" class="grid grid-cols-3 gap-2 hidden"></div>
+        </fieldset>
+
+        <!-- Contributor Section -->
+        <fieldset class="space-y-4">
+          <legend class="text-lg font-semibold text-amber-400 mb-2">👤 About You</legend>
+
+          <div>
+            <label class="block text-sm font-medium mb-2">
+              Your relationship to this property <span class="text-red-400">*</span>
+            </label>
+            <div class="space-y-2">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="contributorType" value="owner" required
+                  class="text-amber-500 focus:ring-amber-500" />
+                <span>I own/live at this property</span>
+                {!user && (
+                  <span class="text-xs text-amber-400">(login required)</span>
+                )}
+              </label>
+              <!-- Owner login prompt - shown when owner selected but not logged in -->
+              <div id="owner-login-prompt" class="hidden ml-6 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <p class="text-sm text-amber-300 mb-2">
+                  To claim ownership of a property, please sign in first.
+                </p>
+                <a href={`/login?redirect=/submit`} class="inline-block bg-amber-500 hover:bg-amber-600 text-slate-900 font-medium py-1.5 px-4 rounded text-sm">
+                  Sign In to Continue
+                </a>
+              </div>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="contributorType" value="neighbor"
+                  class="text-amber-500 focus:ring-amber-500" />
+                <span>I'm a neighbor</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="contributorType" value="visitor"
+                  class="text-amber-500 focus:ring-amber-500" />
+                <span>I drove/walked by</span>
+              </label>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Submit Button -->
+        <div class="pt-4">
+          <button
+            type="submit"
+            id="submit-btn"
+            class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-semibold py-3 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Submit Display
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+</BaseLayout>
+
+<script>
+  /**
+   * Client-side form handling
+   *
+   * This script runs in the browser (not on the server).
+   * It handles:
+   * 1. Photo preview
+   * 2. Form submission via fetch API with progress
+   * 3. Success/error display
+   */
+
+  const form = document.getElementById('submit-form') as HTMLFormElement;
+  const photosInput = document.getElementById('photos') as HTMLInputElement;
+  const photoPreview = document.getElementById('photo-preview') as HTMLDivElement;
+  const submitBtn = document.getElementById('submit-btn') as HTMLButtonElement;
+  const successMsg = document.getElementById('success-message') as HTMLDivElement;
+  const errorMsg = document.getElementById('error-message') as HTMLDivElement;
+  const errorText = document.getElementById('error-text') as HTMLSpanElement;
+  const progressContainer = document.getElementById('progress-container') as HTMLDivElement;
+  const progressStatus = document.getElementById('progress-status') as HTMLSpanElement;
+  const progressBar = document.getElementById('progress-bar') as HTMLDivElement;
+  const progressDetail = document.getElementById('progress-detail') as HTMLDivElement;
+  const addressInput = document.getElementById('address') as HTMLInputElement;
+  const addressSuggestions = document.getElementById('address-suggestions') as HTMLDivElement;
+  const citySelect = document.getElementById('city') as HTMLSelectElement;
+  const zipSelect = document.getElementById('zip') as HTMLSelectElement;
+  const ownerLoginPrompt = document.getElementById('owner-login-prompt') as HTMLDivElement;
+
+  // Get user state from form data attributes
+  const isLoggedIn = form.dataset.loggedIn === 'true';
+  const userId = form.dataset.userId || null;
+
+  // Handle contributor type selection - show login prompt if owner selected without login
+  const contributorRadios = document.querySelectorAll('input[name="contributorType"]');
+  contributorRadios.forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      const value = (e.target as HTMLInputElement).value;
+      if (value === 'owner' && !isLoggedIn) {
+        ownerLoginPrompt.classList.remove('hidden');
+        submitBtn.disabled = true;
+      } else {
+        ownerLoginPrompt.classList.add('hidden');
+        submitBtn.disabled = false;
+      }
+    });
+  });
+
+  // Progress helper
+  function updateProgress(status: string, percent: number, detail = '') {
+    progressStatus.textContent = status;
+    progressBar.style.width = `${percent}%`;
+    progressDetail.textContent = detail;
+  }
+
+  // Address autocomplete using Photon (free OSM-based geocoder)
+  // Greater Birmingham Metro Area bounding box (7-county MSA)
+  const BIRMINGHAM_BBOX = { minLat: 32.6, maxLat: 34.2, minLng: -87.5, maxLng: -86.0 };
+
+  let debounceTimer: ReturnType<typeof setTimeout>;
+
+  addressInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const query = addressInput.value.trim();
+
+    if (query.length < 3) {
+      addressSuggestions.classList.add('hidden');
+      return;
+    }
+
+    debounceTimer = setTimeout(async () => {
+      try {
+        // Photon API with Birmingham bias
+        const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=33.52&lon=-86.81&limit=5`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        // Filter to Birmingham area only
+        const filtered = data.features?.filter((f: any) => {
+          const [lng, lat] = f.geometry.coordinates;
+          return lat >= BIRMINGHAM_BBOX.minLat && lat <= BIRMINGHAM_BBOX.maxLat &&
+                 lng >= BIRMINGHAM_BBOX.minLng && lng <= BIRMINGHAM_BBOX.maxLng;
+        }) || [];
+
+        if (filtered.length === 0) {
+          addressSuggestions.classList.add('hidden');
+          return;
+        }
+
+        // Render suggestions
+        addressSuggestions.innerHTML = filtered.map((f: any) => {
+          const props = f.properties;
+          const street = props.street || '';
+          const housenumber = props.housenumber || '';
+          const city = props.city || props.locality || '';
+          const postcode = props.postcode || '';
+          const display = housenumber ? `${housenumber} ${street}` : street;
+
+          return `<div class="px-4 py-2 hover:bg-slate-700 cursor-pointer text-sm"
+                       data-street="${display}"
+                       data-city="${city}"
+                       data-zip="${postcode}">
+                    <div class="font-medium">${display}</div>
+                    <div class="text-slate-400 text-xs">${city}${postcode ? ', ' + postcode : ''}</div>
+                  </div>`;
+        }).join('');
+
+        addressSuggestions.classList.remove('hidden');
+      } catch (err) {
+        console.error('Autocomplete error:', err);
+      }
+    }, 300);
+  });
+
+  // Handle suggestion click
+  addressSuggestions.addEventListener('click', (e) => {
+    const item = (e.target as HTMLElement).closest('[data-street]') as HTMLElement;
+    if (!item) return;
+
+    const street = item.dataset.street || '';
+    const city = item.dataset.city || '';
+    const zip = item.dataset.zip || '';
+
+    addressInput.value = street;
+
+    // Try to match city
+    const cityOption = Array.from(citySelect.options).find(o =>
+      o.value.toLowerCase() === city.toLowerCase()
+    );
+    if (cityOption) {
+      citySelect.value = cityOption.value;
+    }
+
+    // Try to match ZIP
+    if (zip) {
+      const zipOption = Array.from(zipSelect.options).find(o => o.value === zip);
+      if (zipOption) {
+        zipSelect.value = zip;
+      }
+    }
+
+    addressSuggestions.classList.add('hidden');
+  });
+
+  // Hide suggestions on click outside
+  document.addEventListener('click', (e) => {
+    if (!addressSuggestions.contains(e.target as Node) && e.target !== addressInput) {
+      addressSuggestions.classList.add('hidden');
+    }
+  });
+
+  // Photo preview on file select
+  photosInput.addEventListener('change', () => {
+    const files = photosInput.files;
+    if (!files || files.length === 0) {
+      photoPreview.classList.add('hidden');
+      return;
+    }
+
+    // Validate file count
+    if (files.length > 5) {
+      alert('Please select up to 5 photos only.');
+      photosInput.value = '';
+      return;
+    }
+
+    // Show previews
+    photoPreview.innerHTML = '';
+    photoPreview.classList.remove('hidden');
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = document.createElement('img');
+        img.src = e.target?.result as string;
+        img.className = 'w-full h-24 object-cover rounded-lg';
+        photoPreview.appendChild(img);
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  // Form submission
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // Reset messages
+    successMsg.classList.add('hidden');
+    errorMsg.classList.add('hidden');
+
+    // Show progress, hide form
+    progressContainer.classList.remove('hidden');
+    submitBtn.disabled = true;
+    submitBtn.classList.add('hidden');
+    updateProgress('Preparing submission...', 5);
+
+    try {
+      // First, upload photos
+      const photos = photosInput.files;
+      if (!photos || photos.length === 0) {
+        throw new Error('Please select at least one photo');
+      }
+
+      const photoUrls: string[] = [];
+      const totalPhotos = photos.length;
+
+      for (let i = 0; i < totalPhotos; i++) {
+        const photo = photos[i];
+        const photoNum = i + 1;
+
+        updateProgress(
+          `Uploading photo ${photoNum} of ${totalPhotos}...`,
+          10 + (photoNum / totalPhotos) * 60,
+          photo.name
+        );
+
+        const formData = new FormData();
+        formData.append('file', photo);
+
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          const err = await uploadRes.json();
+          throw new Error(err.error || `Failed to upload photo ${photoNum}`);
+        }
+
+        const { url } = await uploadRes.json();
+        photoUrls.push(url);
+      }
+
+      updateProgress('Finding your address on the map...', 75);
+
+      // Collect form data
+      const formData = new FormData(form);
+      const features = formData.getAll('features') as string[];
+
+      // Build bestTimes from selectors
+      const lightsOn = formData.get('lightsOn') as string;
+      const lightsOff = formData.get('lightsOff') as string;
+      const schedule = formData.get('schedule') as string;
+
+      let bestTimes: string | null = null;
+      if (lightsOn && lightsOff) {
+        const scheduleText = schedule === 'nightly' ? 'nightly' :
+                            schedule === 'weekends' ? 'weekends only' :
+                            schedule === 'fri-sun' ? 'Fri-Sun' :
+                            'varies';
+        bestTimes = `${lightsOn} - ${lightsOff}, ${scheduleText}`;
+      }
+
+      const contributorType = formData.get('contributorType') as string;
+
+      const submitData = {
+        address: formData.get('address'),
+        unit: formData.get('unit') || null,
+        city: formData.get('city'),
+        zip: formData.get('zip'),
+        neighborhood: formData.get('neighborhood') || null,
+        displayName: formData.get('displayName') || null,
+        description: formData.get('description') || null,
+        bestTimes,
+        contributorType,
+        features,
+        photoUrls,
+        // Include userId if user is owner and logged in
+        ownerId: contributorType === 'owner' && userId ? userId : null,
+      };
+
+      updateProgress('Submitting your display...', 90);
+
+      // Submit property
+      const submitRes = await fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(submitData),
+      });
+
+      if (!submitRes.ok) {
+        const err = await submitRes.json();
+        throw new Error(err.error || 'Failed to submit property');
+      }
+
+      updateProgress('Done!', 100);
+
+      // Success! Show success message after brief delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      form.classList.add('hidden');
+      progressContainer.classList.add('hidden');
+      successMsg.classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    } catch (err) {
+      // Show error, restore form
+      progressContainer.classList.add('hidden');
+      errorText.textContent = err instanceof Error ? err.message : 'Something went wrong';
+      errorMsg.classList.remove('hidden');
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('hidden');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+</script>

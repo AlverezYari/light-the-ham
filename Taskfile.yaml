@@ -1,0 +1,175 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  APP_NAME: light-the-ham
+  # Override with: task build REGISTRY=your.registry.com
+  REGISTRY: '{{.REGISTRY | default "zot.phillips-homelab.net"}}'
+  IMAGE: '{{.REGISTRY}}/{{.APP_NAME}}'
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ===========================================================================
+  # Development
+  # ===========================================================================
+  dev:
+    desc: Start development server
+    cmds:
+      - pnpm dev
+
+  "dev:host":
+    desc: Start dev server exposed to network (for mobile testing)
+    cmds:
+      - pnpm dev --host
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - pnpm install
+
+  # ===========================================================================
+  # Database
+  # ===========================================================================
+  "db:push":
+    desc: Push schema changes to database
+    cmds:
+      - pnpm db:push
+
+  "db:studio":
+    desc: Open Drizzle Studio (database browser)
+    cmds:
+      - pnpm db:studio
+
+  "db:seed":
+    desc: Seed database with sample data
+    cmds:
+      - pnpm db:seed
+
+  "db:migrate":
+    desc: Run database migrations
+    cmds:
+      - pnpm db:migrate
+
+  # ===========================================================================
+  # Build & Test
+  # ===========================================================================
+  build:
+    desc: Build production application
+    cmds:
+      - pnpm build
+
+  preview:
+    desc: Preview production build locally
+    deps: [build]
+    cmds:
+      - pnpm preview
+
+  typecheck:
+    desc: Run TypeScript type checking
+    cmds:
+      - npx tsc --noEmit
+
+  lint:
+    desc: Run linter (if configured)
+    cmds:
+      - echo "No linter configured yet"
+
+  test:
+    desc: Run tests (if configured)
+    cmds:
+      - echo "No tests configured yet"
+
+  # ===========================================================================
+  # Docker
+  # ===========================================================================
+  "docker:build":
+    desc: Build Docker image for amd64
+    cmds:
+      - |
+        docker buildx build --platform linux/amd64 \
+          --tag {{.IMAGE}}:{{.VERSION}} \
+          --tag {{.IMAGE}}:latest \
+          --build-arg VERSION={{.VERSION}} \
+          --build-arg COMMIT={{.COMMIT}} \
+          .
+    sources:
+      - Dockerfile
+      - src/**/*
+      - package.json
+      - pnpm-lock.yaml
+
+  "docker:run":
+    desc: Run Docker container locally
+    deps: ["docker:build"]
+    cmds:
+      - |
+        docker run --rm -it \
+          -p 4321:4321 \
+          -v $(pwd)/data:/app/data \
+          -v $(pwd)/public/uploads:/app/public/uploads \
+          --env-file .env \
+          {{.IMAGE}}:latest
+
+  "docker:shell":
+    desc: Shell into running container
+    cmds:
+      - docker exec -it {{.APP_NAME}} /bin/sh
+
+  "docker:push":
+    desc: Build and push image to registry
+    cmds:
+      - |
+        docker buildx build --platform linux/amd64 \
+          --tag {{.IMAGE}}:{{.VERSION}} \
+          --tag {{.IMAGE}}:latest \
+          --build-arg VERSION={{.VERSION}} \
+          --build-arg COMMIT={{.COMMIT}} \
+          --push \
+          .
+
+  # ===========================================================================
+  # Release
+  # ===========================================================================
+  release:
+    desc: Build and push to registry
+    cmds:
+      - task: typecheck
+      - task: "docker:build"
+      - task: "docker:push"
+    vars:
+      VERSION: '{{.CLI_ARGS | default .VERSION}}'
+
+  # ===========================================================================
+  # Utilities
+  # ===========================================================================
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf dist .astro node_modules/.cache
+
+  "clean:all":
+    desc: Clean everything including node_modules
+    cmds:
+      - rm -rf dist .astro node_modules
+
+  admin:
+    desc: "Make a user an admin (usage: task admin -- user@email.com)"
+    cmds:
+      - npx tsx scripts/make-admins.ts {{.CLI_ARGS}}
+
+  info:
+    desc: Show build info
+    cmds:
+      - 'echo "App: {{.APP_NAME}}"'
+      - 'echo "Version: {{.VERSION}}"'
+      - 'echo "Commit: {{.COMMIT}}"'
+      - 'echo "Registry: {{.REGISTRY}}"'
+      - 'echo "Image: {{.IMAGE}}:{{.VERSION}}"'

@@ -1,0 +1,37 @@
+# Dependencies (reinstalled in container)
+node_modules
+
+# Build output (rebuilt in container)
+dist
+.astro
+
+# Development files
+*.md
+.git
+.gitignore
+.env*
+!.env.example
+
+# Database & uploads (mounted as volumes)
+data
+*.db
+*.db-*
+public/uploads
+
+# IDE & OS
+.idea
+.vscode
+.DS_Store
+*.swp
+*.swo
+
+# Scripts not needed in production
+scripts/seed.ts
+scripts/cleanup-dupes.ts
+scripts/check-status.ts
+
+# Task & Docker files (not needed inside container)
+Taskfile.yaml
+Dockerfile
+.dockerignore
+docker-compose*.yaml
