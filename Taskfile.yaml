@@ -64,6 +64,8 @@ tasks:
   build:
     desc: Build production application
     cmds:
+      # better-sqlite3 opens the DB during prerender; the directory must exist.
+      - mkdir -p data
       - pnpm build
 
   preview:
@@ -75,17 +77,40 @@ tasks:
   typecheck:
     desc: Run TypeScript type checking
     cmds:
-      - npx tsc --noEmit
+      - pnpm typecheck
+
+  fmt:
+    desc: Auto-format the codebase with Biome
+    cmds:
+      - pnpm fmt
 
   lint:
-    desc: Run linter (if configured)
+    desc: Lint with Biome (CI runs this)
     cmds:
-      - echo "No linter configured yet"
+      - pnpm lint
+
+  "lint:fix":
+    desc: Lint with Biome and auto-fix safe issues
+    cmds:
+      - pnpm lint:fix
 
   test:
-    desc: Run tests (if configured)
+    desc: Run Vitest test suite (CI runs this)
     cmds:
-      - echo "No tests configured yet"
+      - pnpm test
+
+  "test:watch":
+    desc: Run Vitest in watch mode
+    cmds:
+      - pnpm test:watch
+
+  ci:
+    desc: Run the same checks CI runs (lint, typecheck, test, build)
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+      - task: build
 
   # ===========================================================================
   # Docker
