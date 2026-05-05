@@ -34,6 +34,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # better-sqlite3 opens data/lighttheham.db at module load time. Anything
+      # that imports src/lib/db (transitively via auth.ts, etc.) would otherwise
+      # crash on a fresh checkout. The Dockerfile does the same `mkdir -p data`.
+      - name: Prepare data directory
+        run: mkdir -p data
+
       - name: Lint (Biome)
         run: pnpm lint
 
@@ -44,5 +50,4 @@ jobs:
         run: pnpm test
 
       - name: Build
-        # data/ must exist because better-sqlite3 is initialized at build time
-        run: mkdir -p data && pnpm build
+        run: pnpm build
