@@ -6,10 +6,10 @@
  */
 export const prerender = false;
 
-import BaseLayout from '../layouts/BaseLayout.astro';
-import { db, properties, propertyClaims } from '../lib/db';
 import { eq, or } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../lib/auth';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getSessionFromCookies, validateSession } from '../lib/auth';
+import { db, properties, propertyClaims } from '../lib/db';
 
 // Check authentication
 const cookieHeader = Astro.request.headers.get('cookie');
@@ -41,13 +41,11 @@ const pendingClaims = await db
   })
   .from(propertyClaims)
   .innerJoin(properties, eq(propertyClaims.propertyId, properties.id))
-  .where(
-    eq(propertyClaims.userId, user.id)
-  )
+  .where(eq(propertyClaims.userId, user.id))
   .orderBy(propertyClaims.createdAt);
 
 // Filter to only pending/disputed claims
-const activeClaims = pendingClaims.filter(c => c.status === 'pending' || c.status === 'disputed');
+const activeClaims = pendingClaims.filter((c) => c.status === 'pending' || c.status === 'disputed');
 ---
 
 <BaseLayout title="My Properties | Light the Ham!">

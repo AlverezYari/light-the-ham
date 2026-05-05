@@ -6,9 +6,9 @@
  */
 export const prerender = false;
 
+import { and, desc, eq } from 'drizzle-orm';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { db, tours, tourStops } from '../../lib/db';
-import { eq, desc, and } from 'drizzle-orm';
+import { db, tourStops, tours } from '../../lib/db';
 
 // Get featured tours only
 const featuredTours = await db
@@ -33,7 +33,7 @@ const featuredWithCounts = await Promise.all(
       .from(tourStops)
       .where(eq(tourStops.tourId, tour.id));
     return { ...tour, stopCount: stops.length };
-  })
+  }),
 );
 ---
 

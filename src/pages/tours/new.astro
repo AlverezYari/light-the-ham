@@ -6,19 +6,15 @@
  */
 export const prerender = false;
 
+import { and, desc, eq } from 'drizzle-orm';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { db, properties, propertyPhotos, seasons } from '../../lib/db';
-import { eq, and, desc } from 'drizzle-orm';
 
 // Get current season's approved properties
-const currentSeason = await db
-  .select()
-  .from(seasons)
-  .where(eq(seasons.status, 'active'))
-  .limit(1);
+const currentSeason = await db.select().from(seasons).where(eq(seasons.status, 'active')).limit(1);
 
-let availableProperties: any[] = [];
-if (currentSeason.length > 0) {
+async function loadAvailableProperties() {
+  if (currentSeason.length === 0) return [];
   const props = await db
     .select({
       id: properties.id,
@@ -32,16 +28,10 @@ if (currentSeason.length > 0) {
       ratingCount: properties.ratingCount,
     })
     .from(properties)
-    .where(
-      and(
-        eq(properties.seasonId, currentSeason[0].id),
-        eq(properties.status, 'approved')
-      )
-    )
+    .where(and(eq(properties.seasonId, currentSeason[0].id), eq(properties.status, 'approved')))
     .orderBy(desc(properties.avgRating));
 
-  // Get photos for each property
-  availableProperties = await Promise.all(
+  return Promise.all(
     props.map(async (prop) => {
       const [photo] = await db
         .select({ url: propertyPhotos.url })
@@ -53,9 +43,11 @@ if (currentSeason.length > 0) {
         title: prop.displayName || prop.address,
         primaryPhoto: photo?.url || null,
       };
-    })
+    }),
   );
 }
+
+const availableProperties = await loadAvailableProperties();
 ---
 
 <BaseLayout title="Create a Tour | Light the Ham!">

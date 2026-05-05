@@ -4,12 +4,15 @@
  * Or set ADMIN_EMAILS env var: ADMIN_EMAILS="email1@example.com,email2@example.com"
  */
 
-import { db, users } from '../src/lib/db';
 import { eq } from 'drizzle-orm';
+import { db, users } from '../src/lib/db';
 
 // Get emails from command line args or environment variable
 const argsEmails = process.argv.slice(2);
-const envEmails = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
+const envEmails =
+  process.env.ADMIN_EMAILS?.split(',')
+    .map((e) => e.trim())
+    .filter(Boolean) || [];
 const ADMIN_EMAILS = argsEmails.length > 0 ? argsEmails : envEmails;
 
 if (ADMIN_EMAILS.length === 0) {

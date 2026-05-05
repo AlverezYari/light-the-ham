@@ -14,13 +14,7 @@ interface Props {
   size?: 'sm' | 'md' | 'lg';
 }
 
-const {
-  rating = 0,
-  count = 0,
-  interactive = false,
-  propertyId = '',
-  size = 'md',
-} = Astro.props;
+const { rating = 0, count = 0, interactive = false, propertyId = '', size = 'md' } = Astro.props;
 
 const sizeClasses = {
   sm: 'w-5 h-5',

@@ -1,7 +1,8 @@
 // @ts-check
-import { defineConfig } from 'astro/config';
-import tailwindcss from '@tailwindcss/vite';
+
 import node from '@astrojs/node';
+import tailwindcss from '@tailwindcss/vite';
+import { defineConfig } from 'astro/config';
 
 // https://astro.build/config
 export default defineConfig({
@@ -12,7 +13,7 @@ export default defineConfig({
 
   // Node adapter for SSR pages and API routes
   adapter: node({
-    mode: 'standalone'  // Runs as standalone Node server
+    mode: 'standalone', // Runs as standalone Node server
   }),
 
   // Vite configuration
@@ -21,7 +22,7 @@ export default defineConfig({
 
     // Ensure better-sqlite3 is treated as external (native module)
     optimizeDeps: {
-      exclude: ['better-sqlite3']
-    }
-  }
+      exclude: ['better-sqlite3'],
+    },
+  },
 });

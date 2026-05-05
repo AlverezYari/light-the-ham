@@ -8,7 +8,7 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { google, findOrCreateUser, createSession, createSessionCookie } from '../../../../lib/auth';
+import { createSession, createSessionCookie, findOrCreateUser, google } from '../../../../lib/auth';
 import { userLogins } from '../../../../lib/metrics';
 
 export const GET: APIRoute = async ({ url, cookies, redirect }) => {
@@ -43,7 +43,7 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
       throw new Error('Failed to get user info from Google');
     }
 
-    const googleUser = await response.json() as {
+    const googleUser = (await response.json()) as {
       id: string;
       email?: string;
       name?: string;
@@ -74,7 +74,6 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
       status: 302,
       headers,
     });
-
   } catch (error) {
     console.error('Google OAuth error:', error);
     return redirect('/login?error=oauth_failed');

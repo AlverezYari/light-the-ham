@@ -7,9 +7,9 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, properties, propertyPhotos, propertyFeatures, contributions } from '../../../lib/db';
 import { eq } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { getSessionFromCookies, validateSession } from '../../../lib/auth';
+import { contributions, db, properties, propertyFeatures, propertyPhotos } from '../../../lib/db';
 
 // Helper to check admin auth
 async function checkAdmin(request: Request) {

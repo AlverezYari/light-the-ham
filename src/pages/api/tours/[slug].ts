@@ -7,32 +7,28 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, tours, tourStops, properties, propertyPhotos } from '../../../lib/db';
-import { eq, asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
+import { db, properties, propertyPhotos, tourStops, tours } from '../../../lib/db';
 
 export const GET: APIRoute = async ({ params }) => {
   try {
     const { slug } = params;
 
     if (!slug) {
-      return new Response(
-        JSON.stringify({ error: 'Tour slug is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Tour slug is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Get the tour
-    const [tour] = await db
-      .select()
-      .from(tours)
-      .where(eq(tours.slug, slug))
-      .limit(1);
+    const [tour] = await db.select().from(tours).where(eq(tours.slug, slug)).limit(1);
 
     if (!tour) {
-      return new Response(
-        JSON.stringify({ error: 'Tour not found' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Tour not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Increment view count
@@ -76,19 +72,17 @@ export const GET: APIRoute = async ({ params }) => {
           primaryPhoto: photo?.url || null,
           title: stop.displayName || stop.address,
         };
-      })
+      }),
     );
 
     // Build Google Maps URL for the tour
-    const waypoints = stopsWithPhotos.map(s => `${s.lat},${s.lng}`);
-    const googleMapsUrl = waypoints.length > 0
-      ? `https://www.google.com/maps/dir/${waypoints.join('/')}`
-      : null;
+    const waypoints = stopsWithPhotos.map((s) => `${s.lat},${s.lng}`);
+    const googleMapsUrl =
+      waypoints.length > 0 ? `https://www.google.com/maps/dir/${waypoints.join('/')}` : null;
 
     // Build Apple Maps URL
-    const appleMapsUrl = waypoints.length > 0
-      ? `https://maps.apple.com/?daddr=${waypoints.join('&daddr=')}`
-      : null;
+    const appleMapsUrl =
+      waypoints.length > 0 ? `https://maps.apple.com/?daddr=${waypoints.join('&daddr=')}` : null;
 
     return new Response(
       JSON.stringify({
@@ -109,14 +103,13 @@ export const GET: APIRoute = async ({ params }) => {
           totalStops: stopsWithPhotos.length,
         },
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
     );
-
   } catch (err) {
     console.error('Tour fetch error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to fetch tour' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to fetch tour' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };

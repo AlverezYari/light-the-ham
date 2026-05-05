@@ -6,10 +6,19 @@
 
 export const prerender = false;
 
+import { and, desc, eq, isNotNull, or } from 'drizzle-orm';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { db, contributions, propertyPhotos, properties, users, tours, tourStops, propertyClaims } from '../../lib/db';
-import { eq, isNotNull, and, desc, or } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../../lib/auth';
+import { getSessionFromCookies, validateSession } from '../../lib/auth';
+import {
+  contributions,
+  db,
+  properties,
+  propertyClaims,
+  propertyPhotos,
+  tourStops,
+  tours,
+  users,
+} from '../../lib/db';
 
 // Check authentication and admin role
 const cookieHeader = Astro.request.headers.get('cookie');
@@ -96,7 +105,7 @@ const toursWithCounts = await Promise.all(
       .from(tourStops)
       .where(eq(tourStops.tourId, tour.id));
     return { ...tour, stopCount: stops.length };
-  })
+  }),
 );
 
 // Fetch pending/disputed ownership claims
@@ -117,12 +126,7 @@ const pendingClaims = await db
   .from(propertyClaims)
   .innerJoin(properties, eq(propertyClaims.propertyId, properties.id))
   .innerJoin(users, eq(propertyClaims.userId, users.id))
-  .where(
-    or(
-      eq(propertyClaims.status, 'pending'),
-      eq(propertyClaims.status, 'disputed')
-    )
-  )
+  .where(or(eq(propertyClaims.status, 'pending'), eq(propertyClaims.status, 'disputed')))
   .orderBy(propertyClaims.createdAt);
 
 // Get current owner info for disputed claims
@@ -138,7 +142,7 @@ const claimsWithOwners = await Promise.all(
       currentOwner = owner;
     }
     return { ...claim, currentOwner };
-  })
+  }),
 );
 ---
 

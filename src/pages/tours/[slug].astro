@@ -6,18 +6,18 @@
  */
 export const prerender = false;
 
+import { asc, eq } from 'drizzle-orm';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { db, tours, tourStops, properties, propertyPhotos } from '../../lib/db';
-import { eq, asc } from 'drizzle-orm';
+import { db, properties, propertyPhotos, tourStops, tours } from '../../lib/db';
 
 const { slug } = Astro.params;
 
+if (!slug) {
+  return Astro.redirect('/404');
+}
+
 // Get the tour
-const [tour] = await db
-  .select()
-  .from(tours)
-  .where(eq(tours.slug, slug!))
-  .limit(1);
+const [tour] = await db.select().from(tours).where(eq(tours.slug, slug)).limit(1);
 
 if (!tour) {
   return Astro.redirect('/404');
@@ -64,13 +64,13 @@ const stopsWithPhotos = await Promise.all(
       primaryPhoto: photo?.url || null,
       title: stop.displayName || stop.address,
     };
-  })
+  }),
 );
 
 // Build navigation URLs
-const waypoints = stopsWithPhotos.map(s => `${s.lat},${s.lng}`);
+const waypoints = stopsWithPhotos.map((s) => `${s.lat},${s.lng}`);
 const googleMapsUrl = `https://www.google.com/maps/dir/${waypoints.join('/')}`;
-const appleMapsUrl = `https://maps.apple.com/?daddr=${waypoints.map(w => w.replace(',', '%2C')).join('&daddr=')}`;
+const appleMapsUrl = `https://maps.apple.com/?daddr=${waypoints.map((w) => w.replace(',', '%2C')).join('&daddr=')}`;
 
 // Share URL
 const shareUrl = `${Astro.url.origin}/tours/${tour.slug}`;

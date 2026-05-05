@@ -10,9 +10,9 @@
 // Enable SSR for this page (not static)
 export const prerender = false;
 
+import { and, count, eq } from 'drizzle-orm';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { db, properties, seasons } from '../lib/db';
-import { eq, and, count } from 'drizzle-orm';
 
 // Fetch stats from database
 const currentSeason = await db.select().from(seasons).where(eq(seasons.status, 'active')).limit(1);
@@ -25,12 +25,7 @@ if (seasonId) {
   const result = await db
     .select({ count: count() })
     .from(properties)
-    .where(
-      and(
-        eq(properties.seasonId, seasonId),
-        eq(properties.status, 'approved')
-      )
-    );
+    .where(and(eq(properties.seasonId, seasonId), eq(properties.status, 'approved')));
   propertyCount = result[0]?.count || 0;
 }
 
@@ -40,19 +35,14 @@ if (seasonId) {
   const cities = await db
     .selectDistinct({ city: properties.city })
     .from(properties)
-    .where(
-      and(
-        eq(properties.seasonId, seasonId),
-        eq(properties.status, 'approved')
-      )
-    );
+    .where(and(eq(properties.seasonId, seasonId), eq(properties.status, 'approved')));
   neighborhoodCount = cities.length;
 }
 
 const stats = {
   properties: propertyCount,
-  neighborhoods: neighborhoodCount || 12,  // Fallback for display
-  season: seasonYear
+  neighborhoods: neighborhoodCount || 12, // Fallback for display
+  season: seasonYear,
 };
 ---
 

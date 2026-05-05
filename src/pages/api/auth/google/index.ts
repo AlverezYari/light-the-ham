@@ -6,19 +6,15 @@
 
 export const prerender = false;
 
+import { generateCodeVerifier, generateState } from 'arctic';
 import type { APIRoute } from 'astro';
 import { google } from '../../../../lib/auth';
-import { generateState, generateCodeVerifier } from 'arctic';
 
 export const GET: APIRoute = async ({ cookies, redirect }) => {
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
 
-  const url = google.createAuthorizationURL(state, codeVerifier, [
-    'openid',
-    'profile',
-    'email',
-  ]);
+  const url = google.createAuthorizationURL(state, codeVerifier, ['openid', 'profile', 'email']);
 
   // Store state and verifier in cookies for callback validation
   cookies.set('google_oauth_state', state, {

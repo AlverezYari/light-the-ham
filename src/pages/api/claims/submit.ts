@@ -11,9 +11,9 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, properties, propertyClaims, users } from '../../../lib/db';
-import { eq, and, gte, count } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { and, count, eq, gte } from 'drizzle-orm';
+import { getSessionFromCookies, validateSession } from '../../../lib/auth';
+import { db, properties, propertyClaims } from '../../../lib/db';
 import { claimsSubmitted } from '../../../lib/metrics';
 
 const MAX_CLAIMS_PER_USER = 3;
@@ -27,10 +27,10 @@ export const POST: APIRoute = async ({ request }) => {
     const session = sessionToken ? await validateSession(sessionToken) : null;
 
     if (!session?.user) {
-      return new Response(
-        JSON.stringify({ error: 'You must be logged in to claim a property' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'You must be logged in to claim a property' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const user = session.user;
@@ -38,10 +38,10 @@ export const POST: APIRoute = async ({ request }) => {
     const { propertyId } = body;
 
     if (!propertyId) {
-      return new Response(
-        JSON.stringify({ error: 'Property ID is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Property ID is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Check if property exists
@@ -52,18 +52,18 @@ export const POST: APIRoute = async ({ request }) => {
       .limit(1);
 
     if (!property) {
-      return new Response(
-        JSON.stringify({ error: 'Property not found' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Property not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Check if user already owns this property
     if (property.ownerId === user.id) {
-      return new Response(
-        JSON.stringify({ error: 'You already own this property' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'You already own this property' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Check if user already has a pending claim on this property
@@ -74,15 +74,15 @@ export const POST: APIRoute = async ({ request }) => {
         and(
           eq(propertyClaims.propertyId, propertyId),
           eq(propertyClaims.userId, user.id),
-          eq(propertyClaims.status, 'pending')
-        )
+          eq(propertyClaims.status, 'pending'),
+        ),
       )
       .limit(1);
 
     if (existingClaim) {
       return new Response(
         JSON.stringify({ error: 'You already have a pending claim on this property' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
@@ -90,12 +90,7 @@ export const POST: APIRoute = async ({ request }) => {
     const [claimCount] = await db
       .select({ count: count() })
       .from(propertyClaims)
-      .where(
-        and(
-          eq(propertyClaims.userId, user.id),
-          eq(propertyClaims.status, 'approved')
-        )
-      );
+      .where(and(eq(propertyClaims.userId, user.id), eq(propertyClaims.status, 'approved')));
 
     // Also count properties they own directly
     const [ownedCount] = await db
@@ -108,7 +103,7 @@ export const POST: APIRoute = async ({ request }) => {
     if (totalOwned >= MAX_CLAIMS_PER_USER) {
       return new Response(
         JSON.stringify({ error: `You can only claim up to ${MAX_CLAIMS_PER_USER} properties` }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
@@ -117,23 +112,21 @@ export const POST: APIRoute = async ({ request }) => {
     const [recentClaim] = await db
       .select()
       .from(propertyClaims)
-      .where(
-        and(
-          eq(propertyClaims.userId, user.id),
-          gte(propertyClaims.createdAt, cooldownTime)
-        )
-      )
+      .where(and(eq(propertyClaims.userId, user.id), gte(propertyClaims.createdAt, cooldownTime)))
       .limit(1);
 
     if (recentClaim) {
+      // recentClaim.createdAt is set by the schema default, but typed nullable.
+      // Fall back to cooldownTime so the wait calculation is always defined.
+      const claimedAt = recentClaim.createdAt ?? cooldownTime;
       const waitTime = Math.ceil(
-        (new Date(recentClaim.createdAt!).getTime() + COOLDOWN_HOURS * 60 * 60 * 1000 - Date.now()) / (60 * 60 * 1000)
+        (claimedAt.getTime() + COOLDOWN_HOURS * 60 * 60 * 1000 - Date.now()) / (60 * 60 * 1000),
       );
       return new Response(
         JSON.stringify({
-          error: `Please wait ${waitTime} hour${waitTime !== 1 ? 's' : ''} before claiming another property`
+          error: `Please wait ${waitTime} hour${waitTime !== 1 ? 's' : ''} before claiming another property`,
         }),
-        { status: 429, headers: { 'Content-Type': 'application/json' } }
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
@@ -142,12 +135,15 @@ export const POST: APIRoute = async ({ request }) => {
     const claimStatus = isDispute ? 'disputed' : 'approved';
 
     // Create the claim
-    const [claim] = await db.insert(propertyClaims).values({
-      propertyId,
-      userId: user.id,
-      status: claimStatus,
-      resolvedAt: isDispute ? null : new Date(),
-    }).returning({ id: propertyClaims.id });
+    const [claim] = await db
+      .insert(propertyClaims)
+      .values({
+        propertyId,
+        userId: user.id,
+        status: claimStatus,
+        resolvedAt: isDispute ? null : new Date(),
+      })
+      .returning({ id: propertyClaims.id });
 
     // If auto-approved (no existing owner), update the property
     if (!isDispute) {
@@ -169,7 +165,7 @@ export const POST: APIRoute = async ({ request }) => {
           message: 'You are now the owner of this property!',
           claimId: claim.id,
         }),
-        { status: 201, headers: { 'Content-Type': 'application/json' } }
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
@@ -184,14 +180,13 @@ export const POST: APIRoute = async ({ request }) => {
         message: 'This property already has an owner. Your claim has been submitted for review.',
         claimId: claim.id,
       }),
-      { status: 201, headers: { 'Content-Type': 'application/json' } }
+      { status: 201, headers: { 'Content-Type': 'application/json' } },
     );
-
   } catch (err) {
     console.error('Claim error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to submit claim. Please try again.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to submit claim. Please try again.' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };
