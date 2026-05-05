@@ -13,10 +13,11 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, properties, contributions } from '../../../lib/db';
-import { eq, and } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { and, eq, isNotNull } from 'drizzle-orm';
+import { getSessionFromCookies, validateSession } from '../../../lib/auth';
+import { contributions, db, properties } from '../../../lib/db';
 import { tipsSubmitted } from '../../../lib/metrics';
+import { isValidUuid } from '../../../lib/security/uuid';
 
 // Limits
 const MAX_TIP_LENGTH = 280;
@@ -32,47 +33,54 @@ export const POST: APIRoute = async ({ request }) => {
     const session = sessionToken ? await validateSession(sessionToken) : null;
 
     if (!session) {
-      return new Response(
-        JSON.stringify({ error: 'You must be logged in to submit tips' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'You must be logged in to submit tips' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const user = session.user;
 
     // Parse request body
-    const body = await request.json() as { propertyId: string; tip: string };
+    const body = (await request.json()) as { propertyId: string; tip: string };
     const { propertyId, tip } = body;
 
     if (!propertyId || !tip) {
-      return new Response(
-        JSON.stringify({ error: 'Property ID and tip are required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Property ID and tip are required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!isValidUuid(propertyId)) {
+      return new Response(JSON.stringify({ error: 'Invalid property ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Validate tip length
     const trimmedTip = tip.trim();
     if (trimmedTip.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Tip cannot be empty' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Tip cannot be empty' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     if (trimmedTip.length > MAX_TIP_LENGTH) {
       return new Response(
         JSON.stringify({ error: `Tip must be ${MAX_TIP_LENGTH} characters or less` }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
     // Check for URLs
     if (URL_REGEX.test(trimmedTip)) {
-      return new Response(
-        JSON.stringify({ error: 'Tips cannot contain URLs or links' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Tips cannot contain URLs or links' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Verify property exists and is approved
@@ -83,13 +91,15 @@ export const POST: APIRoute = async ({ request }) => {
       .limit(1);
 
     if (property.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Property not found' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Property not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // Check if user already has a tip for this property
+    // Check if user already has a tip for this property.
+    // isNotNull is required — without it, rating-only contributions from the same
+    // user would be matched as "existing tips" and the user could never add one.
     const existingTip = await db
       .select({ id: contributions.id })
       .from(contributions)
@@ -97,8 +107,8 @@ export const POST: APIRoute = async ({ request }) => {
         and(
           eq(contributions.propertyId, propertyId),
           eq(contributions.userId, user.id),
-          eq(contributions.tip, contributions.tip) // Has a tip (not null check workaround)
-        )
+          isNotNull(contributions.tip),
+        ),
       )
       .limit(1);
 
@@ -121,7 +131,7 @@ export const POST: APIRoute = async ({ request }) => {
           message: 'Tip updated! It will appear after moderation.',
           updated: true,
         }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
@@ -145,14 +155,13 @@ export const POST: APIRoute = async ({ request }) => {
         message: 'Tip submitted! It will appear after moderation.',
         updated: false,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
     );
-
   } catch (err) {
     console.error('Tip submission error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to submit tip' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to submit tip' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };

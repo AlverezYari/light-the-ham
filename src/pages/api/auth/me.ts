@@ -7,32 +7,26 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { getSessionFromCookies, validateSession } from '../../../lib/auth';
 
 export const GET: APIRoute = async ({ request }) => {
   const cookieHeader = request.headers.get('cookie');
   const sessionToken = getSessionFromCookies(cookieHeader);
 
   if (!sessionToken) {
-    return new Response(
-      JSON.stringify({ user: null }),
-      {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
+    return new Response(JSON.stringify({ user: null }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   const result = await validateSession(sessionToken);
 
   if (!result) {
-    return new Response(
-      JSON.stringify({ user: null }),
-      {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
+    return new Response(JSON.stringify({ user: null }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   // Return user info (excluding sensitive fields)
@@ -50,6 +44,6 @@ export const GET: APIRoute = async ({ request }) => {
     {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
-    }
+    },
   );
 };

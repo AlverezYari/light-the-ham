@@ -7,10 +7,10 @@
 
 export const prerender = false;
 
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { APIRoute } from 'astro';
-import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 
@@ -31,7 +31,7 @@ export const GET: APIRoute = async ({ params }) => {
   }
 
   // Prevent directory traversal
-  const safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
+  const safePath = path.normalize(filePath).replace(/^(\.\.[/\\])+/, '');
   const fullPath = path.join(UPLOADS_DIR, safePath);
 
   // Ensure the path is within uploads directory

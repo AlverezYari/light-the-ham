@@ -4,7 +4,7 @@
 
 // Import global styles (Tailwind)
 import '../styles/global.css';
-import { validateSession, getSessionFromCookies } from '../lib/auth';
+import { getSessionFromCookies, validateSession } from '../lib/auth';
 
 // Props interface - like Python type hints for function parameters
 interface Props {
@@ -14,8 +14,8 @@ interface Props {
 
 // Destructure props with defaults (like **kwargs with defaults)
 const {
-  title = "Light the Ham! | Greater Birmingham Christmas Lights Guide",
-  description = "Discover and rate the best Christmas light displays in the Greater Birmingham Metro Area"
+  title = 'Light the Ham! | Greater Birmingham Christmas Lights Guide',
+  description = 'Discover and rate the best Christmas light displays in the Greater Birmingham Metro Area',
 } = Astro.props;
 
 // Check if user is logged in

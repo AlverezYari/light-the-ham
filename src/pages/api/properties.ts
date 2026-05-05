@@ -14,8 +14,15 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, properties, seasons, propertyPhotos, propertyFeatures, featureTags } from '../../lib/db';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
+import {
+  db,
+  featureTags,
+  properties,
+  propertyFeatures,
+  propertyPhotos,
+  seasons,
+} from '../../lib/db';
 
 export const GET: APIRoute = async ({ url }) => {
   try {
@@ -34,19 +41,16 @@ export const GET: APIRoute = async ({ url }) => {
       .limit(1);
 
     if (currentSeason.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No active season' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'No active season' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const seasonId = currentSeason[0].id;
 
     // Build query conditions
-    let conditions = and(
-      eq(properties.seasonId, seasonId),
-      eq(properties.status, 'approved')
-    );
+    let conditions = and(eq(properties.seasonId, seasonId), eq(properties.status, 'approved'));
 
     if (city) {
       conditions = and(conditions, eq(properties.city, city));
@@ -88,8 +92,8 @@ export const GET: APIRoute = async ({ url }) => {
             and(
               eq(propertyPhotos.propertyId, prop.id),
               eq(propertyPhotos.status, 'approved'),
-              eq(propertyPhotos.isPrimary, true)
-            )
+              eq(propertyPhotos.isPrimary, true),
+            ),
           )
           .limit(1);
 
@@ -99,10 +103,7 @@ export const GET: APIRoute = async ({ url }) => {
             .select({ url: propertyPhotos.url })
             .from(propertyPhotos)
             .where(
-              and(
-                eq(propertyPhotos.propertyId, prop.id),
-                eq(propertyPhotos.status, 'approved')
-              )
+              and(eq(propertyPhotos.propertyId, prop.id), eq(propertyPhotos.status, 'approved')),
             )
             .limit(1);
         }
@@ -119,37 +120,35 @@ export const GET: APIRoute = async ({ url }) => {
           .where(eq(propertyFeatures.propertyId, prop.id));
 
         // Build display title: displayName > "Neighborhood Lights" > address
-        const title = prop.displayName
-          || (prop.neighborhood ? `${prop.neighborhood} Lights` : null)
-          || prop.address;
+        const title =
+          prop.displayName ||
+          (prop.neighborhood ? `${prop.neighborhood} Lights` : null) ||
+          prop.address;
 
         return {
           ...prop,
           title,
           primaryPhoto: photos[0]?.url || null,
-          features: features.map(f => ({ slug: f.slug, name: f.name, icon: f.icon })),
+          features: features.map((f) => ({ slug: f.slug, name: f.name, icon: f.icon })),
         };
-      })
+      }),
     );
 
     // Filter by features if requested
     let filteredProps = propsWithData;
     if (featureSlugs.length > 0) {
-      filteredProps = propsWithData.filter(prop =>
-        featureSlugs.every(slug => prop.features.some(f => f.slug === slug))
+      filteredProps = propsWithData.filter((prop) =>
+        featureSlugs.every((slug) => prop.features.some((f) => f.slug === slug)),
       );
     }
 
     // Filter by search query if provided
     if (searchQuery) {
-      filteredProps = filteredProps.filter(prop => {
-        const searchIn = [
-          prop.displayName,
-          prop.address,
-          prop.neighborhood,
-          prop.city,
-          prop.title,
-        ].filter(Boolean).join(' ').toLowerCase();
+      filteredProps = filteredProps.filter((prop) => {
+        const searchIn = [prop.displayName, prop.address, prop.neighborhood, prop.city, prop.title]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
         return searchIn.includes(searchQuery);
       });
     }
@@ -164,16 +163,15 @@ export const GET: APIRoute = async ({ url }) => {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache',  // Always fetch fresh data
-        }
-      }
+          'Cache-Control': 'no-cache', // Always fetch fresh data
+        },
+      },
     );
-
   } catch (err) {
     console.error('Properties API error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to fetch properties' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to fetch properties' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };

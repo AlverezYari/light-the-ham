@@ -6,29 +6,20 @@
  */
 export const prerender = false;
 
-import BaseLayout from '../layouts/BaseLayout.astro';
+import { and, count, eq } from 'drizzle-orm';
 import PropertyMap from '../components/PropertyMap.astro';
-import { db, properties, seasons, featureTags } from '../lib/db';
-import { eq, and, count } from 'drizzle-orm';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { db, featureTags, properties, seasons } from '../lib/db';
 
 // Get property count for display
-const currentSeason = await db
-  .select()
-  .from(seasons)
-  .where(eq(seasons.status, 'active'))
-  .limit(1);
+const currentSeason = await db.select().from(seasons).where(eq(seasons.status, 'active')).limit(1);
 
 let propertyCount = 0;
 if (currentSeason.length > 0) {
   const result = await db
     .select({ count: count() })
     .from(properties)
-    .where(
-      and(
-        eq(properties.seasonId, currentSeason[0].id),
-        eq(properties.status, 'approved')
-      )
-    );
+    .where(and(eq(properties.seasonId, currentSeason[0].id), eq(properties.status, 'approved')));
   propertyCount = result[0]?.count || 0;
 }
 

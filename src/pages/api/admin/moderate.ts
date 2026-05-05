@@ -10,9 +10,18 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, contributions, propertyPhotos, properties, moderationLog, users, tours, tourStops, propertyClaims } from '../../../lib/db';
 import { eq } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { getSessionFromCookies, validateSession } from '../../../lib/auth';
+import {
+  contributions,
+  db,
+  moderationLog,
+  properties,
+  propertyClaims,
+  propertyPhotos,
+  tourStops,
+  tours,
+} from '../../../lib/db';
 
 type EntityType = 'photo' | 'tip' | 'property' | 'tour' | 'claim';
 type Action = 'approve' | 'reject' | 'delete' | 'feature' | 'unfeature';
@@ -32,48 +41,49 @@ export const POST: APIRoute = async ({ request }) => {
     const session = sessionToken ? await validateSession(sessionToken) : null;
 
     if (!session) {
-      return new Response(
-        JSON.stringify({ error: 'Authentication required' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Authentication required' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Check admin/moderator role
     const user = session.user;
     if (user.role !== 'admin' && user.role !== 'moderator') {
-      return new Response(
-        JSON.stringify({ error: 'Admin access required' }),
-        { status: 403, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Admin access required' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Parse request body
-    const body = await request.json() as ModerateRequest;
+    const body = (await request.json()) as ModerateRequest;
     const { entityType, entityId, action, reason } = body;
 
     if (!entityType || !entityId || !action) {
       return new Response(
         JSON.stringify({ error: 'entityType, entityId, and action are required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
     if (!['photo', 'tip', 'property', 'tour', 'claim'].includes(entityType)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid entityType' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid entityType' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     if (!['approve', 'reject', 'delete', 'feature', 'unfeature'].includes(action)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid action' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid action' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     let previousStatus: string | null = null;
-    let newStatus: string = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : action;
+    const newStatus: string =
+      action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : action;
 
     // Update the entity based on type
     switch (entityType) {
@@ -85,10 +95,10 @@ export const POST: APIRoute = async ({ request }) => {
           .limit(1);
 
         if (existing.length === 0) {
-          return new Response(
-            JSON.stringify({ error: 'Photo not found' }),
-            { status: 404, headers: { 'Content-Type': 'application/json' } }
-          );
+          return new Response(JSON.stringify({ error: 'Photo not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
 
         previousStatus = existing[0].status;
@@ -113,10 +123,10 @@ export const POST: APIRoute = async ({ request }) => {
           .limit(1);
 
         if (existing.length === 0) {
-          return new Response(
-            JSON.stringify({ error: 'Tip not found' }),
-            { status: 404, headers: { 'Content-Type': 'application/json' } }
-          );
+          return new Response(JSON.stringify({ error: 'Tip not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
 
         previousStatus = existing[0].status;
@@ -141,10 +151,10 @@ export const POST: APIRoute = async ({ request }) => {
           .limit(1);
 
         if (existing.length === 0) {
-          return new Response(
-            JSON.stringify({ error: 'Property not found' }),
-            { status: 404, headers: { 'Content-Type': 'application/json' } }
-          );
+          return new Response(JSON.stringify({ error: 'Property not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
 
         previousStatus = existing[0].status;
@@ -167,7 +177,7 @@ export const POST: APIRoute = async ({ request }) => {
         if (!['delete', 'feature', 'unfeature'].includes(action)) {
           return new Response(
             JSON.stringify({ error: 'Tours only support delete, feature, and unfeature actions' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
           );
         }
 
@@ -178,10 +188,10 @@ export const POST: APIRoute = async ({ request }) => {
           .limit(1);
 
         if (existing.length === 0) {
-          return new Response(
-            JSON.stringify({ error: 'Tour not found' }),
-            { status: 404, headers: { 'Content-Type': 'application/json' } }
-          );
+          return new Response(JSON.stringify({ error: 'Tour not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
 
         previousStatus = existing[0].isFeatured ? 'featured' : 'active';
@@ -209,7 +219,7 @@ export const POST: APIRoute = async ({ request }) => {
         if (!['approve', 'reject'].includes(action)) {
           return new Response(
             JSON.stringify({ error: 'Claims only support approve and reject actions' }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } }
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
           );
         }
 
@@ -225,10 +235,10 @@ export const POST: APIRoute = async ({ request }) => {
           .limit(1);
 
         if (existing.length === 0) {
-          return new Response(
-            JSON.stringify({ error: 'Claim not found' }),
-            { status: 404, headers: { 'Content-Type': 'application/json' } }
-          );
+          return new Response(JSON.stringify({ error: 'Claim not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          });
         }
 
         const claim = existing[0];
@@ -277,14 +287,13 @@ export const POST: APIRoute = async ({ request }) => {
         success: true,
         message: `${entityType} ${action}d successfully`,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
     );
-
   } catch (err) {
     console.error('Moderation error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to moderate content' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to moderate content' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };

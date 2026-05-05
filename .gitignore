@@ -32,7 +32,8 @@ public/uploads/
 .DS_Store
 
 # internal planning docs (keep local, don't push)
-docs/
+# Tracked docs live at docs/*.md; anything under docs/local/ stays out of git.
+docs/local/
 
 # jetbrains setting folder
 .idea/

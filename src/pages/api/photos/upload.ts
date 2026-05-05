@@ -12,13 +12,15 @@
 
 export const prerender = false;
 
+import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { APIRoute } from 'astro';
-import { writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
-import { db, properties, propertyPhotos, contributions } from '../../../lib/db';
-import { eq, and, sql } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../../../lib/auth';
+import { and, eq, sql } from 'drizzle-orm';
+import { getSessionFromCookies, validateSession } from '../../../lib/auth';
+import { contributions, db, properties, propertyPhotos } from '../../../lib/db';
+import { validateImage } from '../../../lib/security/image-validate';
+import { isValidUuid } from '../../../lib/security/uuid';
 
 // Limits
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -34,10 +36,10 @@ export const POST: APIRoute = async ({ request }) => {
     const session = sessionToken ? await validateSession(sessionToken) : null;
 
     if (!session) {
-      return new Response(
-        JSON.stringify({ error: 'You must be logged in to upload photos' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'You must be logged in to upload photos' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const user = session.user;
@@ -49,26 +51,36 @@ export const POST: APIRoute = async ({ request }) => {
     const propertyId = formData.get('propertyId') as string | null;
 
     if (!file || !propertyId) {
-      return new Response(
-        JSON.stringify({ error: 'Photo and propertyId are required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Photo and propertyId are required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // Validate file type
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      return new Response(
-        JSON.stringify({ error: 'Only JPG, PNG, and WebP images are allowed' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+    if (!isValidUuid(propertyId)) {
+      return new Response(JSON.stringify({ error: 'Invalid property ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    // Validate file size
+    // File-size check first (cheap, rejects abuse before reading the buffer).
     if (file.size > MAX_FILE_SIZE) {
-      return new Response(
-        JSON.stringify({ error: 'File size must be under 5MB' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'File size must be under 5MB' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Magic-byte validation. Browser-supplied file.type is spoofable;
+    // we sniff the actual signature and trust that.
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const validated = await validateImage(buffer, ALLOWED_TYPES);
+    if (!validated.ok) {
+      return new Response(JSON.stringify({ error: validated.error }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Verify property exists and is approved
@@ -79,10 +91,10 @@ export const POST: APIRoute = async ({ request }) => {
       .limit(1);
 
     if (property.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Property not found' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Property not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Check property photo limit (20 per property) - skip for admins
@@ -95,7 +107,7 @@ export const POST: APIRoute = async ({ request }) => {
       if ((propertyPhotoCount[0]?.count || 0) >= MAX_PER_PROPERTY) {
         return new Response(
           JSON.stringify({ error: 'This property has reached the maximum number of photos' }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } }
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
         );
       }
 
@@ -104,24 +116,20 @@ export const POST: APIRoute = async ({ request }) => {
         .select({ count: sql<number>`COUNT(*)` })
         .from(propertyPhotos)
         .innerJoin(contributions, eq(propertyPhotos.contributionId, contributions.id))
-        .where(
-          and(
-            eq(propertyPhotos.propertyId, propertyId),
-            eq(contributions.userId, user.id)
-          )
-        );
+        .where(and(eq(propertyPhotos.propertyId, propertyId), eq(contributions.userId, user.id)));
 
       if ((userPhotoCount[0]?.count || 0) >= MAX_PER_USER_PER_PROPERTY) {
         return new Response(
-          JSON.stringify({ error: `You can only upload ${MAX_PER_USER_PER_PROPERTY} photos per property` }),
-          { status: 400, headers: { 'Content-Type': 'application/json' } }
+          JSON.stringify({
+            error: `You can only upload ${MAX_PER_USER_PER_PROPERTY} photos per property`,
+          }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } },
         );
       }
     }
 
-    // Generate unique filename
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-    const filename = `${propertyId}-${user.id.slice(0, 8)}-${Date.now()}.${ext}`;
+    // Build filename from the *validated* extension, not the user-supplied name.
+    const filename = `${propertyId}-${user.id.slice(0, 8)}-${Date.now()}.${validated.ext}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
     const filepath = path.join(uploadDir, filename);
 
@@ -130,8 +138,6 @@ export const POST: APIRoute = async ({ request }) => {
       await mkdir(uploadDir, { recursive: true });
     }
 
-    // Write file
-    const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(filepath, buffer);
 
     // Create contribution record
@@ -165,14 +171,13 @@ export const POST: APIRoute = async ({ request }) => {
         message: 'Photo uploaded! It will appear after moderation.',
         photoId: photoResult[0].id,
       }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
     );
-
   } catch (err) {
     console.error('Photo upload error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to upload photo' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to upload photo' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };

@@ -11,10 +11,17 @@
  */
 export const prerender = false;
 
+import { and, eq, isNotNull } from 'drizzle-orm';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { db, properties, propertyPhotos, propertyFeatures, featureTags, contributions } from '../../lib/db';
-import { eq, and, isNotNull } from 'drizzle-orm';
-import { validateSession, getSessionFromCookies } from '../../lib/auth';
+import { getSessionFromCookies, validateSession } from '../../lib/auth';
+import {
+  contributions,
+  db,
+  featureTags,
+  properties,
+  propertyFeatures,
+  propertyPhotos,
+} from '../../lib/db';
 
 // Check if user is logged in
 const cookieHeader = Astro.request.headers.get('cookie');
@@ -30,11 +37,7 @@ if (!id) {
 }
 
 // Fetch property with photos and features
-const property = await db
-  .select()
-  .from(properties)
-  .where(eq(properties.id, id))
-  .limit(1);
+const property = await db.select().from(properties).where(eq(properties.id, id)).limit(1);
 
 if (property.length === 0) {
   return Astro.redirect('/map?error=not-found');
@@ -51,12 +54,7 @@ if (prop.status !== 'approved' && prop.status !== 'pending') {
 const photos = await db
   .select()
   .from(propertyPhotos)
-  .where(
-    and(
-      eq(propertyPhotos.propertyId, id),
-      eq(propertyPhotos.status, 'approved')
-    )
-  )
+  .where(and(eq(propertyPhotos.propertyId, id), eq(propertyPhotos.status, 'approved')))
   .orderBy(propertyPhotos.sortOrder);
 
 // Fetch features with tag details
@@ -84,8 +82,8 @@ const approvedTips = await db
     and(
       eq(contributions.propertyId, id),
       eq(contributions.status, 'approved'),
-      isNotNull(contributions.tip)
-    )
+      isNotNull(contributions.tip),
+    ),
   )
   .orderBy(contributions.createdAt);
 
@@ -102,8 +100,8 @@ if (user) {
       and(
         eq(contributions.propertyId, id),
         eq(contributions.userId, user.id),
-        isNotNull(contributions.tip)
-      )
+        isNotNull(contributions.tip),
+      ),
     )
     .limit(1);
   userTip = existingTip[0]?.tip || null;
@@ -117,12 +115,7 @@ if (user) {
     const [pendingClaim] = await db
       .select()
       .from(propertyClaims)
-      .where(
-        and(
-          eq(propertyClaims.propertyId, id),
-          eq(propertyClaims.userId, user.id)
-        )
-      )
+      .where(and(eq(propertyClaims.propertyId, id), eq(propertyClaims.userId, user.id)))
       .limit(1);
     userHasPendingClaim = pendingClaim?.status === 'pending' || pendingClaim?.status === 'disputed';
   }
@@ -133,9 +126,8 @@ const hasOwner = !!prop.ownerId;
 
 // Build page title
 // Priority: displayName > "Neighborhood Lights" > address
-const pageTitle = prop.displayName
-  || (prop.neighborhood ? `${prop.neighborhood} Lights` : null)
-  || prop.address;
+const pageTitle =
+  prop.displayName || (prop.neighborhood ? `${prop.neighborhood} Lights` : null) || prop.address;
 
 // Build Google Maps directions URL
 const mapsQuery = encodeURIComponent(`${prop.address}, ${prop.city}, ${prop.state} ${prop.zip}`);
@@ -143,21 +135,21 @@ const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${maps
 
 // Feature icon map
 const iconMap: Record<string, string> = {
-  'music': '🎵',
-  'walk': '🚶',
-  'car': '🚗',
-  'gift': '🎅',
-  'sparkles': '✨',
-  'projector': '🎬',
-  'child': '👨‍👩‍👧',
-  'coffee': '☕',
-  'heart': '❤️',
-  'trophy': '🏆',
-  'star': '⭐',
-  'flame': '🔥',
-  'balloon': '🎈',
-  'church': '⛪',
-  'snowflake': '❄️',
+  music: '🎵',
+  walk: '🚶',
+  car: '🚗',
+  gift: '🎅',
+  sparkles: '✨',
+  projector: '🎬',
+  child: '👨‍👩‍👧',
+  coffee: '☕',
+  heart: '❤️',
+  trophy: '🏆',
+  star: '⭐',
+  flame: '🔥',
+  balloon: '🎈',
+  church: '⛪',
+  snowflake: '❄️',
 };
 ---
 

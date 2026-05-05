@@ -38,8 +38,7 @@ sqlite.pragma('journal_mode = WAL');
  */
 export const db = drizzle(sqlite, { schema });
 
-// Also export the raw sqlite connection for advanced use cases
-export { sqlite };
-
 // Re-export schema for convenience
 export * from './schema';
+// Also export the raw sqlite connection for advanced use cases
+export { sqlite };

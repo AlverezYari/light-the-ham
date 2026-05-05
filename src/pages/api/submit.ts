@@ -14,14 +14,21 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, properties, contributions, propertyPhotos, propertyFeatures, seasons } from '../../lib/db';
-import { geocodeAddress, isGeocodeError } from '../../lib/geocode';
 import { eq } from 'drizzle-orm';
+import {
+  contributions,
+  db,
+  properties,
+  propertyFeatures,
+  propertyPhotos,
+  seasons,
+} from '../../lib/db';
+import { geocodeAddress, isGeocodeError } from '../../lib/geocode';
 import { propertiesSubmitted } from '../../lib/metrics';
 
 interface SubmitRequest {
   address: string;
-  unit?: string;  // Apt/Suite/Unit number
+  unit?: string; // Apt/Suite/Unit number
   city: string;
   zip: string;
   neighborhood?: string;
@@ -29,44 +36,44 @@ interface SubmitRequest {
   description?: string;
   bestTimes?: string;
   contributorType: 'owner' | 'neighbor' | 'visitor';
-  features: string[];  // Array of feature tag IDs
+  features: string[]; // Array of feature tag IDs
   photoUrls: string[];
-  ownerId?: string;    // User ID if submitter claims ownership
+  ownerId?: string; // User ID if submitter claims ownership
 }
 
 export const POST: APIRoute = async ({ request, clientAddress }) => {
   try {
     // Parse request body
-    const body = await request.json() as SubmitRequest;
+    const body = (await request.json()) as SubmitRequest;
 
     // Validate required fields
     if (!body.address || !body.city || !body.zip) {
-      return new Response(
-        JSON.stringify({ error: 'Address, city, and ZIP are required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Address, city, and ZIP are required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     if (!body.contributorType) {
-      return new Response(
-        JSON.stringify({ error: 'Contributor type is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Contributor type is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     if (!body.photoUrls || body.photoUrls.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'At least one photo is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'At least one photo is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Validate ZIP format
     if (!/^\d{5}$/.test(body.zip)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid ZIP code format' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid ZIP code format' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Geocode the address
@@ -74,18 +81,16 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     const geocodeResult = await geocodeAddress(body.address, body.city, 'AL', body.zip);
 
     if (isGeocodeError(geocodeResult)) {
-      return new Response(
-        JSON.stringify({ error: geocodeResult.error }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: geocodeResult.error }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     console.log(`   ✓ Found: ${geocodeResult.lat}, ${geocodeResult.lng}`);
 
     // Build full address with unit for display/storage
-    const fullAddress = body.unit
-      ? `${body.address}, ${body.unit}`
-      : body.address;
+    const fullAddress = body.unit ? `${body.address}, ${body.unit}` : body.address;
 
     // Get current active season
     const currentSeason = await db
@@ -95,33 +100,36 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       .limit(1);
 
     if (currentSeason.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'No active season found' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'No active season found' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     const seasonId = currentSeason[0].id;
 
     // Create the property
-    const [property] = await db.insert(properties).values({
-      seasonId,
-      address: fullAddress,
-      city: body.city,
-      state: 'AL',
-      zip: body.zip,
-      neighborhood: body.neighborhood || null,
-      lat: geocodeResult.lat,
-      lng: geocodeResult.lng,
-      displayName: body.displayName || null,
-      description: body.description || null,
-      bestTimes: body.bestTimes || null,
-      status: 'pending',  // Requires moderation
-      photoCount: body.photoUrls.length,
-      contributionCount: 1,
-      // Track owner if they claim ownership and are logged in
-      ownerId: body.contributorType === 'owner' && body.ownerId ? body.ownerId : null,
-    }).returning({ id: properties.id });
+    const [property] = await db
+      .insert(properties)
+      .values({
+        seasonId,
+        address: fullAddress,
+        city: body.city,
+        state: 'AL',
+        zip: body.zip,
+        neighborhood: body.neighborhood || null,
+        lat: geocodeResult.lat,
+        lng: geocodeResult.lng,
+        displayName: body.displayName || null,
+        description: body.description || null,
+        bestTimes: body.bestTimes || null,
+        status: 'pending', // Requires moderation
+        photoCount: body.photoUrls.length,
+        contributionCount: 1,
+        // Track owner if they claim ownership and are logged in
+        ownerId: body.contributorType === 'owner' && body.ownerId ? body.ownerId : null,
+      })
+      .returning({ id: properties.id });
 
     console.log(`🏠 Created property: ${property.id}`);
 
@@ -131,13 +139,16 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       ? Buffer.from(clientAddress).toString('base64').slice(0, 16)
       : null;
 
-    const [contribution] = await db.insert(contributions).values({
-      propertyId: property.id,
-      contributorType: body.contributorType,
-      anonymousId,
-      userId: body.ownerId || null,  // Link to user if they're logged in
-      status: 'pending',
-    }).returning({ id: contributions.id });
+    const [contribution] = await db
+      .insert(contributions)
+      .values({
+        propertyId: property.id,
+        contributorType: body.contributorType,
+        anonymousId,
+        userId: body.ownerId || null, // Link to user if they're logged in
+        status: 'pending',
+      })
+      .returning({ id: contributions.id });
 
     // Add photos
     for (let i = 0; i < body.photoUrls.length; i++) {
@@ -145,7 +156,7 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         propertyId: property.id,
         contributionId: contribution.id,
         url: body.photoUrls[i],
-        isPrimary: i === 0,  // First photo is primary
+        isPrimary: i === 0, // First photo is primary
         status: 'pending',
       });
     }
@@ -155,12 +166,15 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
     // Link feature tags
     if (body.features && body.features.length > 0) {
       for (const featureId of body.features) {
-        await db.insert(propertyFeatures).values({
-          propertyId: property.id,
-          featureId,
-          contributionId: contribution.id,
-          confirmedCount: 1,
-        }).onConflictDoNothing();
+        await db
+          .insert(propertyFeatures)
+          .values({
+            propertyId: property.id,
+            featureId,
+            contributionId: contribution.id,
+            confirmedCount: 1,
+          })
+          .onConflictDoNothing();
       }
       console.log(`   ✨ Added ${body.features.length} features`);
     }
@@ -178,15 +192,14 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       }),
       {
         status: 201,
-        headers: { 'Content-Type': 'application/json' }
-      }
+        headers: { 'Content-Type': 'application/json' },
+      },
     );
-
   } catch (err) {
     console.error('Submission error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to submit property. Please try again.' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to submit property. Please try again.' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };

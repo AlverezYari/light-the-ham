@@ -6,13 +6,13 @@
  * Run with: npx tsx scripts/init-season.ts
  */
 
-import { db, seasons, featureTags } from '../src/lib/db';
 import { eq } from 'drizzle-orm';
+import { db, featureTags, seasons } from '../src/lib/db';
 
 const CURRENT_SEASON = {
   year: 2025,
-  startDate: '2025-11-28',  // Thanksgiving
-  endDate: '2026-01-06',    // Epiphany
+  startDate: '2025-11-28', // Thanksgiving
+  endDate: '2026-01-06', // Epiphany
   status: 'active' as const,
   votingOpen: true,
 };
@@ -30,7 +30,13 @@ const FEATURE_TAGS = [
   // Interactive features
   { name: 'Walk-Through', slug: 'walk-through', category: 'interactive', icon: '🚶', sortOrder: 1 },
   { name: 'Santa Visit', slug: 'santa-visit', category: 'interactive', icon: '🎅', sortOrder: 2 },
-  { name: 'Hot Cocoa/Treats', slug: 'hot-cocoa-treats', category: 'interactive', icon: '☕', sortOrder: 3 },
+  {
+    name: 'Hot Cocoa/Treats',
+    slug: 'hot-cocoa-treats',
+    category: 'interactive',
+    icon: '☕',
+    sortOrder: 3,
+  },
 
   // Access
   { name: 'Drive-By Only', slug: 'drive-by-only', category: 'access', icon: '🚗', sortOrder: 1 },
@@ -39,15 +45,33 @@ const FEATURE_TAGS = [
   { name: 'Kid Friendly', slug: 'kid-friendly', category: 'audience', icon: '👶', sortOrder: 1 },
 
   // Community
-  { name: 'Charity/Donations', slug: 'charity-donations', category: 'community', icon: '❤️', sortOrder: 1 },
+  {
+    name: 'Charity/Donations',
+    slug: 'charity-donations',
+    category: 'community',
+    icon: '❤️',
+    sortOrder: 1,
+  },
 
   // Style
-  { name: 'Classic/Traditional', slug: 'classic-traditional', category: 'style', icon: '🕯️', sortOrder: 1 },
+  {
+    name: 'Classic/Traditional',
+    slug: 'classic-traditional',
+    category: 'style',
+    icon: '🕯️',
+    sortOrder: 1,
+  },
   { name: 'Over The Top', slug: 'over-the-top', category: 'style', icon: '🤯', sortOrder: 2 },
 
   // Theme
   { name: 'Religious Theme', slug: 'religious-theme', category: 'theme', icon: '⭐', sortOrder: 1 },
-  { name: 'Winter Wonderland', slug: 'winter-wonderland', category: 'theme', icon: '❄️', sortOrder: 2 },
+  {
+    name: 'Winter Wonderland',
+    slug: 'winter-wonderland',
+    category: 'theme',
+    icon: '❄️',
+    sortOrder: 2,
+  },
 
   // Recognition
   { name: 'Award Winner', slug: 'award-winner', category: 'recognition', icon: '🏆', sortOrder: 1 },
@@ -68,10 +92,7 @@ async function initSeason() {
 
     // Make sure it's active
     if (existing[0].status !== 'active') {
-      await db
-        .update(seasons)
-        .set({ status: 'active' })
-        .where(eq(seasons.id, existing[0].id));
+      await db.update(seasons).set({ status: 'active' }).where(eq(seasons.id, existing[0].id));
       console.log(`  → Updated to active`);
     }
   } else {

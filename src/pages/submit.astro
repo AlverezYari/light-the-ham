@@ -8,8 +8,8 @@
 export const prerender = false;
 
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { getSessionFromCookies, validateSession } from '../lib/auth';
 import { db, featureTags } from '../lib/db';
-import { validateSession, getSessionFromCookies } from '../lib/auth';
 
 // Check if user is logged in (needed for owner claims)
 const cookieHeader = Astro.request.headers.get('cookie');
@@ -21,12 +21,15 @@ const user = session?.user || null;
 const tags = await db.select().from(featureTags).orderBy(featureTags.sortOrder);
 
 // Group tags by category for better UX
-const tagsByCategory = tags.reduce((acc, tag) => {
-  const category = tag.category || 'other';
-  if (!acc[category]) acc[category] = [];
-  acc[category].push(tag);
-  return acc;
-}, {} as Record<string, typeof tags>);
+const tagsByCategory = tags.reduce(
+  (acc, tag) => {
+    const category = tag.category || 'other';
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(tag);
+    return acc;
+  },
+  {} as Record<string, typeof tags>,
+);
 
 const categoryLabels: Record<string, string> = {
   audio: '🎵 Audio',

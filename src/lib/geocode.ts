@@ -19,10 +19,10 @@ export interface GeocodeError {
 // Greater Birmingham Metro Area bounding box (7-county MSA)
 // Covers: Jefferson, Shelby, St. Clair, Blount, Walker, Chilton, Bibb counties
 const BIRMINGHAM_BOUNDS = {
-  minLat: 32.6,   // South (Chilton County)
-  maxLat: 34.2,   // North (Blount County)
-  minLng: -87.5,  // West (Walker County)
-  maxLng: -86.0,  // East (St. Clair County / Pell City)
+  minLat: 32.6, // South (Chilton County)
+  maxLat: 34.2, // North (Blount County)
+  minLng: -87.5, // West (Walker County)
+  maxLng: -86.0, // East (St. Clair County / Pell City)
 };
 
 /**
@@ -44,7 +44,7 @@ async function geocodeWithGoogle(
   address: string,
   city: string,
   state: string,
-  zip: string
+  zip: string,
 ): Promise<GeocodeResult | GeocodeError | null> {
   // Check both import.meta.env (dev) and process.env (prod)
   const apiKey = import.meta.env?.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
@@ -115,7 +115,7 @@ async function geocodeWithNominatim(
   address: string,
   city: string,
   state: string,
-  zip: string
+  zip: string,
 ): Promise<GeocodeResult | GeocodeError> {
   const query = `${address}, ${city}, ${state} ${zip}, USA`;
   const url = new URL('https://nominatim.openstreetmap.org/search');
@@ -190,7 +190,7 @@ export async function geocodeAddress(
   address: string,
   city: string,
   state: string = 'AL',
-  zip: string
+  zip: string,
 ): Promise<GeocodeResult | GeocodeError> {
   // Try Google first (better address coverage)
   const googleResult = await geocodeWithGoogle(address, city, state, zip);
@@ -207,8 +207,6 @@ export async function geocodeAddress(
 /**
  * Type guard to check if result is an error
  */
-export function isGeocodeError(
-  result: GeocodeResult | GeocodeError
-): result is GeocodeError {
+export function isGeocodeError(result: GeocodeResult | GeocodeError): result is GeocodeError {
   return 'error' in result;
 }

@@ -8,8 +8,8 @@
 export const prerender = false;
 
 import type { APIRoute } from 'astro';
-import { db, tours, tourStops, properties, propertyPhotos } from '../../../lib/db';
-import { eq, and, desc } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
+import { db, tourStops, tours } from '../../../lib/db';
 import { toursCreated } from '../../../lib/metrics';
 
 // Generate a URL-friendly slug
@@ -31,28 +31,31 @@ export const POST: APIRoute = async ({ request }) => {
     if (!body.name || !body.propertyIds || body.propertyIds.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Tour name and at least one property are required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
     if (body.propertyIds.length > 20) {
-      return new Response(
-        JSON.stringify({ error: 'Tours can have a maximum of 20 stops' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Tours can have a maximum of 20 stops' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     // Generate unique slug
     const slug = generateSlug(body.name);
 
     // Create the tour
-    const [tour] = await db.insert(tours).values({
-      slug,
-      name: body.name,
-      description: body.description || null,
-      creatorName: body.creatorName || 'Anonymous',
-      isPublic: body.isPublic !== false,
-    }).returning({ id: tours.id, slug: tours.slug });
+    const [tour] = await db
+      .insert(tours)
+      .values({
+        slug,
+        name: body.name,
+        description: body.description || null,
+        creatorName: body.creatorName || 'Anonymous',
+        isPublic: body.isPublic !== false,
+      })
+      .returning({ id: tours.id, slug: tours.slug });
 
     // Add stops in order
     for (let i = 0; i < body.propertyIds.length; i++) {
@@ -75,15 +78,14 @@ export const POST: APIRoute = async ({ request }) => {
         slug: tour.slug,
         url: `/tours/${tour.slug}`,
       }),
-      { status: 201, headers: { 'Content-Type': 'application/json' } }
+      { status: 201, headers: { 'Content-Type': 'application/json' } },
     );
-
   } catch (err) {
     console.error('Tour creation error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to create tour' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to create tour' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };
 
@@ -107,7 +109,7 @@ export const GET: APIRoute = async ({ url }) => {
       .where(
         featured
           ? and(eq(tours.isPublic, true), eq(tours.isFeatured, true))
-          : eq(tours.isPublic, true)
+          : eq(tours.isPublic, true),
       )
       .orderBy(desc(tours.viewCount))
       .limit(20);
@@ -123,19 +125,18 @@ export const GET: APIRoute = async ({ url }) => {
           ...tour,
           stopCount: stops.length,
         };
-      })
+      }),
     );
 
-    return new Response(
-      JSON.stringify({ tours: toursWithCounts }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({ tours: toursWithCounts }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     console.error('Tours list error:', err);
-    return new Response(
-      JSON.stringify({ error: 'Failed to fetch tours' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Failed to fetch tours' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 };

@@ -44,6 +44,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/drizzle.config.ts ./
+# Versioned migration files — the entrypoint reads ./drizzle/ on startup.
+COPY --from=builder /app/drizzle ./drizzle
 
 # Create data and uploads directories
 RUN mkdir -p data public/uploads && \

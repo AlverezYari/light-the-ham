@@ -5,7 +5,7 @@
  * Includes HTTP request metrics and app-specific business metrics.
  */
 
-import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
+import { Counter, collectDefaultMetrics, Gauge, Histogram, Registry } from 'prom-client';
 
 // Create a custom registry (allows us to control what's exposed)
 export const registry = new Registry();
@@ -123,7 +123,7 @@ export const claimsSubmitted = new Counter({
 export const userLogins = new Counter({
   name: 'lth_user_logins_total',
   help: 'Total user logins',
-  labelNames: ['provider'] as const, // 'google', 'apple', 'facebook'
+  labelNames: ['provider'] as const, // currently only 'google'; extend if more providers are added
   registers: [registry],
 });
 
@@ -145,15 +145,17 @@ export const activeSessions = new Gauge({
  * e.g., /properties/abc123 -> /properties/:id
  */
 export function normalizeRoute(path: string): string {
-  return path
-    // Property IDs (UUIDs)
-    .replace(/\/properties\/[a-f0-9-]{36}/gi, '/properties/:id')
-    // Tour slugs
-    .replace(/\/tours\/[a-z0-9-]+/gi, '/tours/:slug')
-    // Upload paths
-    .replace(/\/uploads\/.+/gi, '/uploads/:path')
-    // Generic UUID pattern
-    .replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, ':uuid')
-    // Clean up any double slashes
-    .replace(/\/+/g, '/');
+  return (
+    path
+      // Property IDs (UUIDs)
+      .replace(/\/properties\/[a-f0-9-]{36}/gi, '/properties/:id')
+      // Tour slugs
+      .replace(/\/tours\/[a-z0-9-]+/gi, '/tours/:slug')
+      // Upload paths
+      .replace(/\/uploads\/.+/gi, '/uploads/:path')
+      // Generic UUID pattern
+      .replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi, ':uuid')
+      // Clean up any double slashes
+      .replace(/\/+/g, '/')
+  );
 }
