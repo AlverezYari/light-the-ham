@@ -11,7 +11,7 @@ A community-driven guide to Christmas light displays in the Greater Birmingham M
 - **Tours** - Create and share custom driving tours of displays
 - **Property Ownership** - Claim your property to manage its listing
 - **Moderation** - Admin panel for approving community contributions
-- **OAuth Authentication** - Sign in with Google (Apple ready)
+- **OAuth Authentication** - Sign in with Google
 
 ## Tech Stack
 
