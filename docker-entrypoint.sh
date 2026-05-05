@@ -2,10 +2,13 @@
 set -e
 
 echo "Running database migrations..."
-npx drizzle-kit push --force
+# Versioned migrations via drizzle-orm. Replaces the old `drizzle-kit push --force`,
+# which was destructive against a Litestream-restored DB. The runner handles three
+# states: fresh DB, legacy push-style DB, already-migrated DB. See scripts/migrate.ts.
+pnpm exec tsx ./scripts/migrate.ts
 
 echo "Initializing season..."
-npx tsx scripts/init-season.ts
+pnpm exec tsx ./scripts/init-season.ts
 
 echo "Starting server..."
 exec "$@"
