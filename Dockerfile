@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Build
 # =============================================================================
-FROM node:20-alpine AS builder
+FROM node:24.22.1-alpine AS builder
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
@@ -24,7 +24,7 @@ RUN mkdir -p data && pnpm build
 # =============================================================================
 # Stage 2: Production
 # =============================================================================
-FROM node:20-alpine AS runner
+FROM node:24.22.1-alpine AS runner
 
 # Install pnpm for production deps
 RUN corepack enable && corepack prepare pnpm@latest --activate
